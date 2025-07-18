@@ -1,182 +1,315 @@
 import trimesh
 import numpy as np
-from pygltflib import GLTF2, Scene, Node, Mesh, Primitive, Buffer, BufferView, Accessor
-from pygltflib.utils import ImageFormat, Image
+from trimesh.visual import TextureVisuals, material
+from trimesh.creation import cylinder, box, icosphere
+import os
+import meshlib.mrmeshpy as mrmeshpy
+import pyvista as pv
+import vtk
+import freetype
+import cairocffi as cairo
+import svgpathtools
+import numpy as np
+from shapely.geometry import Polygon
+import trimesh
+import tempfile
+import os
+
+from PIL import ImageFont, Image, ImageDraw
+import svgwrite
+import numpy as np
+from shapely.geometry import Polygon, MultiPolygon
+from shapely.ops import unary_union
+import shapely
+import trimesh
+import tempfile
+import os
+from svgpathtools import svg2paths
+
+
+def create_text_mesh_custom_font(text, font_path="nofile", font_size=100, depth=2):
+    """
+    Render text using a custom TTF font via Pillow, export to SVG,
+    parse path with svgpathtools, then extrude to a 3D mesh.
+    """
+    # Create image and draw text
+    font = ImageFont.truetype(font_path, font_size)
+    (width, height) = font.getsize(text)
+    image = Image.new("L", (width + 10, height + 10), 0)
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 5), text, fill=255, font=font)
+
+    # Convert to SVG using svgwrite and the bitmap outline
+    contours = []
+    for y in range(image.height):
+        for x in range(image.width):
+            if image.getpixel((x, y)) > 0:
+                contours.append((x, -y))  # Flip Y axis for geometric consistency
+
+    if not contours:
+        raise ValueError("Text image is empty — font may be missing.")
+
+    # Turn pixel cloud into a Shapely polygon
+    pixels = [Polygon([
+        (x, y),
+        (x + 1, y),
+        (x + 1, y + 1),
+        (x, y + 1)
+    ]) for x, y in contours]
+
+    unioned = unary_union(pixels)
+    if isinstance(unioned, Polygon):
+        polygons = [unioned]
+    elif isinstance(unioned, MultiPolygon):
+        polygons = list(unioned.geoms)
+    else:
+        raise ValueError("Failed to extract polygonal outlines from text.")
+
+    # Extrude
+    mesh = trimesh.util.concatenate([
+        trimesh.creation.extrude_polygon(p, height=depth)
+        for p in polygons if p.area > 1
+    ])
+
+    return mesh
+
+
 
 def create_laser_cutter_model():
-    """Create a 3D model of a standard laser cutter"""
+    """Create a detailed 3D model of a laser cutter with all components"""
     # Main dimensions (mm)
     machine_width = 600
     machine_depth = 300
     machine_height = 200
     material_thickness = 2  # Sheet metal thickness
     
-    # Create main enclosure
-    enclosure = trimesh.creation.box(
-        extents=[machine_width, machine_depth, machine_height],
-        transform=np.eye(4)
+    # Create main enclosure with texture
+    enclosure = box(
+        extents=[machine_width, machine_depth, machine_height]
     )
     
     # Create interior cavity (subtracted from enclosure)
-    cavity = trimesh.creation.box(
+    cavity = box(
         extents=[machine_width - material_thickness*2, 
                  machine_depth - material_thickness*2, 
-                 machine_height - material_thickness],
-        transform=np.eye(4)
+                 machine_height - material_thickness]
     )
     enclosure = enclosure.difference(cavity)
     
-    # Create cutting bed
-    bed = trimesh.creation.box(
+    # Apply metallic material to enclosure
+    enclosure.visual = TextureVisuals(
+        material=material.PBRMaterial(
+            metallicFactor=0.7,
+            roughnessFactor=0.3,
+            baseColorFactor=[0.8, 0.8, 0.8, 1.0]
+        )
+    )
+    
+    # Create aluminum cutting bed with honeycomb pattern
+    bed = box(
         extents=[machine_width - 50, machine_depth - 50, 5],
         transform=trimesh.transformations.translation_matrix([0, 0, -machine_height/2 + 10])
     )
     
-    # Create laser head assembly
-    laser_head = trimesh.creation.cylinder(
+    # Add honeycomb pattern to bed
+    honeycomb = []
+    hex_radius = 10
+    for x in np.arange(-machine_width/2 + 60, machine_width/2 - 60, hex_radius * 1.5):
+        for y in np.arange(-machine_depth/2 + 60, machine_depth/2 - 60, hex_radius * np.sqrt(3)):
+            hexagon = trimesh.creation.cylinder(
+                radius=hex_radius,
+                height=3,
+                sections=6,
+                transform=trimesh.transformations.translation_matrix([
+                    x + (hex_radius * 0.75 if (y/hex_radius) % 2 else 0),
+                    y,
+                    -machine_height/2 + 12.5
+                ])
+            )
+            honeycomb.append(hexagon)
+    bed.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.5,
+        roughnessFactor=0.4,
+        baseColorFactor=[0.9, 0.9, 0.9, 1.0]
+    ))
+    
+    # Create laser head assembly with lens
+    laser_body = cylinder(
         radius=15,
         height=40,
         transform=trimesh.transformations.translation_matrix([0, 0, machine_height/2 - 20])
     )
+    laser_body.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.8,
+        roughnessFactor=0.2,
+        baseColorFactor=[0.2, 0.2, 0.2, 1.0]
+    ))
     
-    # Create gantry system
-    x_rail = trimesh.creation.box(
+    laser_lens = cylinder(
+        radius=8,
+        height=5,
+        transform=trimesh.transformations.translation_matrix([0, 0, machine_height/2 + 10])
+    )
+    laser_lens.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.1,
+        roughnessFactor=0.05,
+        baseColorFactor=[0.1, 0.3, 0.8, 0.7],
+        emissiveFactor=[0.1, 0.1, 0.5]
+    ))
+    
+    # Create gantry system with linear rails
+    x_rail = box(
         extents=[machine_width, 20, 20],
         transform=trimesh.transformations.translation_matrix([0, machine_depth/2 - 30, machine_height/2 - 30])
     )
+    x_rail.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.6,
+        roughnessFactor=0.4,
+        baseColorFactor=[0.3, 0.3, 0.3, 1.0]
+    ))
     
-    y_rail = trimesh.creation.box(
+    y_rail = box(
         extents=[20, machine_depth, 20],
         transform=trimesh.transformations.translation_matrix([0, 0, machine_height/2 - 30])
     )
     
-    # Create control panel
-    control_panel = trimesh.creation.box(
+    # Create belt drive system
+    belt_pulley = cylinder(
+        radius=5,
+        height=15,
+        transform=trimesh.transformations.translation_matrix([machine_width/2 - 40, machine_depth/2 - 40, machine_height/2 - 25])
+    )
+    
+    # Create control panel with buttons and display
+    panel = box(
         extents=[150, material_thickness, 80],
         transform=trimesh.transformations.translation_matrix([machine_width/2 - 80, machine_depth/2, machine_height/2 - 40])
     )
+    panel.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.2,
+        roughnessFactor=0.6,
+        baseColorFactor=[0.1, 0.1, 0.1, 1.0]
+    ))
+    
+    # Add buttons
+    buttons = []
+    for i in range(5):
+        button = cylinder(
+            radius=5,
+            height=2,
+            transform=trimesh.transformations.translation_matrix([
+                machine_width/2 - 100 + i*15,
+                machine_depth/2 + 1,
+                machine_height/2 - 20
+            ])
+        )
+        button.visual = TextureVisuals(material=material.PBRMaterial(
+            metallicFactor=0.1,
+            roughnessFactor=0.7,
+            baseColorFactor=[0.8, 0.1, 0.1, 1.0]
+        ))
+        buttons.append(button)
+    
+    # Add LCD display
+    display = box(
+        extents=[60, 2, 30],
+        transform=trimesh.transformations.translation_matrix([
+            machine_width/2 - 60,
+            machine_depth/2 + 1,
+            machine_height/2 - 10
+        ])
+    )
+    display.visual = TextureVisuals(material=material.PBRMaterial(
+        emissiveFactor=[0.2, 0.6, 0.2],
+        baseColorFactor=[0.1, 0.3, 0.1, 1.0]
+    ))
+    
+    # Create ventilation system
+    vents = []
+    for i in range(8):
+        vent = box(
+            extents=[80, material_thickness, 5],
+            transform=trimesh.transformations.translation_matrix([
+                -machine_width/2 + 50 + i*10,
+                -machine_depth/2,
+                machine_height/2 - 50
+            ])
+        )
+        vents.append(vent)
+    
+    # Create cable management
+    cables = []
+    for i in range(3):
+        cable = trimesh.creation.capsule(
+            height=100,
+            radius=3,
+            transform=trimesh.transformations.translation_matrix([
+                machine_width/2 - 30,
+                machine_depth/2 - 50 - i*10,
+                machine_height/2 - 60
+            ])
+        )
+        cable.visual = TextureVisuals(material=material.PBRMaterial(
+            metallicFactor=0.1,
+            roughnessFactor=0.8,
+            baseColorFactor=[0.3, 0.3, 0.3, 1.0]
+        ))
+        cables.append(cable)
+    
+    # Add branding/logo
+    # Generate text mesh using meshlib
+    logo_mesh = create_text_mesh_custom_font("Code Collective")
+    
+    logo_mesh.apply_translation([-machine_width/2 + 30, machine_depth/2 + 1, machine_height/2 - 30])
+    logo_mesh.visual = TextureVisuals(material=material.PBRMaterial(
+        metallicFactor=0.9,
+        roughnessFactor=0.2,
+        baseColorFactor=[0.8, 0.1, 0.1, 1.0]
+    ))
     
     # Combine all parts
-    machine = trimesh.util.concatenate([
+    components = [
         enclosure,
         bed,
-        laser_head,
+        *honeycomb,
+        laser_body,
+        laser_lens,
         x_rail,
         y_rail,
-        control_panel
-    ])
+        belt_pulley,
+        panel,
+        *buttons,
+        display,
+        *vents,
+        *cables,
+        logo_mesh
+    ]
     
-    return machine
+    # Set a nice background color for the scene
+    scene = trimesh.Scene(components)
+    scene.bg_color = [0.9, 0.9, 0.9, 1.0]
+    
+    return scene
 
-def export_gltf(mesh, filename):
-    """Export a trimesh object to GLTF format"""
-    # Create a GLTF2 object
-    gltf = GLTF2()
+def export_model(scene):
+    """Export the model to GLB format"""
+    # Create output directory if it doesn't exist
+    os.makedirs("output", exist_ok=True)
     
-    # Create a scene
-    scene = Scene()
-    gltf.scenes.append(scene)
+    # Export as GLB (binary GLTF)
+    export_path = os.path.join("output", "laser_cutter.glb")
+    scene.export(export_path)
+    print(f"Exported laser cutter model to {export_path}")
     
-    # Create a node
-    node = Node()
-    gltf.nodes.append(node)
-    
-    # Add the node to the scene
-    scene.nodes.append(0)
-    
-    # Create a mesh
-    gltf_mesh = Mesh()
-    gltf.meshes.append(gltf_mesh)
-    
-    # Create a primitive
-    primitive = Primitive()
-    gltf_mesh.primitives.append(primitive)
-    
-    # Convert trimesh to GLTF format
-    # Note: This is a simplified conversion - for production use consider using trimesh's built-in GLTF export
-    vertices = mesh.vertices
-    faces = mesh.faces
-    
-    # Create buffer with vertex data
-    vertex_buffer = np.concatenate([
-        vertices.astype(np.float32),
-        mesh.visual.vertex_normals.astype(np.float32)
-    ], axis=1).tobytes()
-    
-    face_buffer = faces.astype(np.uint32).tobytes()
-    
-    # Add buffers
-    buffer = Buffer()
-    gltf.buffers.append(buffer)
-    
-    # Add buffer views
-    bufferView1 = BufferView()
-    bufferView1.buffer = 0
-    bufferView1.byteOffset = 0
-    bufferView1.byteLength = len(vertex_buffer)
-    bufferView1.target = 34962  # ARRAY_BUFFER
-    gltf.bufferViews.append(bufferView1)
-    
-    bufferView2 = BufferView()
-    bufferView2.buffer = 0
-    bufferView2.byteOffset = len(vertex_buffer)
-    bufferView2.byteLength = len(face_buffer)
-    bufferView2.target = 34963  # ELEMENT_ARRAY_BUFFER
-    gltf.bufferViews.append(bufferView2)
-    
-    # Add accessors
-    accessor1 = Accessor()
-    accessor1.bufferView = 0
-    accessor1.byteOffset = 0
-    accessor1.componentType = 5126  # FLOAT
-    accessor1.count = len(vertices)
-    accessor1.type = "VEC3"
-    accessor1.min = vertices.min(axis=0).tolist()
-    accessor1.max = vertices.max(axis=0).tolist()
-    gltf.accessors.append(accessor1)
-    
-    accessor2 = Accessor()
-    accessor2.bufferView = 0
-    accessor2.byteOffset = 0
-    accessor2.componentType = 5126  # FLOAT
-    accessor2.count = len(vertices)
-    accessor2.type = "VEC3"
-    gltf.accessors.append(accessor2)
-    
-    accessor3 = Accessor()
-    accessor3.bufferView = 1
-    accessor3.byteOffset = 0
-    accessor3.componentType = 5125  # UNSIGNED_INT
-    accessor3.count = len(faces) * 3
-    accessor3.type = "SCALAR"
-    gltf.accessors.append(accessor3)
-    
-    # Set primitive attributes
-    primitive.attributes.POSITION = 0
-    primitive.attributes.NORMAL = 1
-    primitive.indices = 2
-    
-    # Link mesh to node
-    node.mesh = 0
-    
-    # Save the GLTF file
-    gltf.save(filename)
-    print(f"Exported laser cutter model to {filename}")
 
 def main():
-    # Create the laser cutter model
-    print("Creating laser cutter 3D model...")
+    print("Creating detailed laser cutter model...")
     laser_cutter = create_laser_cutter_model()
     
-    # Export to GLTF
-    print("Exporting to GLTF format...")
-    export_gltf(laser_cutter, "laser_cutter.gltf")
+    print("Exporting model...")
+    export_model(laser_cutter)
     
-    # Also export as GLB (binary version)
-    laser_cutter.export("laser_cutter.glb", file_type='glb')
-    print("Exported laser cutter model to laser_cutter.glb")
-    
-    print("Done!")
+    print("Done! Model exported to /output directory")
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,3 @@
-
 import { sceneConfig } from './scene-config.js';
 
 export const createStandardScene = (engine, canvas) => {
@@ -7,11 +6,11 @@ export const createStandardScene = (engine, canvas) => {
 
   // Camera setup
   const camera = new BABYLON.ArcRotateCamera(
-    "camera", 
-    sceneConfig.camera.alpha, 
-    sceneConfig.camera.beta, 
-    sceneConfig.camera.radius, 
-    BABYLON.Vector3.Zero(), 
+    "camera",
+    sceneConfig.camera.alpha,
+    sceneConfig.camera.beta,
+    sceneConfig.camera.radius,
+    BABYLON.Vector3.Zero(),
     scene
   );
   camera.attachControl(canvas, true);
@@ -22,7 +21,7 @@ export const createStandardScene = (engine, canvas) => {
   // Create lights dynamically
   sceneConfig.lights.forEach(lightConfig => {
     let light;
-    switch(lightConfig.type) {
+    switch (lightConfig.type) {
       case 'hemispheric':
         light = new BABYLON.HemisphericLight(
           lightConfig.name,
@@ -46,13 +45,29 @@ export const createStandardScene = (engine, canvas) => {
     }
   });
 
+  sceneConfig.models?.forEach(model => {
+    BABYLON.SceneLoader.ImportMesh(
+      null,
+      model.path,
+      model.file,
+      scene,
+      function (meshes) {
+        const root = meshes[0];
+        root.name = model.name;
+        root.position = BABYLON.Vector3.FromArray(model.position || [0, 0, 0]);
+        root.scaling = BABYLON.Vector3.FromArray(model.scaling || [1, 1, 1]);
+        root.rotation = BABYLON.Vector3.FromArray(model.rotation || [0, 0, 0])
+      }
+    );
+  });
+
   // Ground
   const ground = BABYLON.MeshBuilder.CreateGround(
-    "ground", 
-    { 
-      width: sceneConfig.ground.width, 
-      height: sceneConfig.ground.height 
-    }, 
+    "ground",
+    {
+      width: sceneConfig.ground.width,
+      height: sceneConfig.ground.height
+    },
     scene
   );
   ground.position.y = sceneConfig.ground.positionY;
@@ -60,8 +75,8 @@ export const createStandardScene = (engine, canvas) => {
 
   // Box with interaction
   const box = BABYLON.MeshBuilder.CreateBox(
-    "box", 
-    { size: sceneConfig.box.size }, 
+    "box",
+    { size: sceneConfig.box.size },
     scene
   );
   box.position.y = sceneConfig.box.positionY;
@@ -69,7 +84,7 @@ export const createStandardScene = (engine, canvas) => {
   box.material.diffuseColor = new BABYLON.Color3(...sceneConfig.box.diffuseColor);
 
   let grabbedBox = null;
-    
+
   scene.onPointerDown = (evt) => {
     const pick = scene.pick(scene.pointerX, scene.pointerY);
     if (pick?.hit && pick.pickedMesh && pick.pickedMesh.name === "box") {
@@ -87,7 +102,7 @@ export const createStandardScene = (engine, canvas) => {
 
   scene.onPointerMove = () => {
     if (grabbedBox) {
-      const groundPos = scene.pick(scene.pointerX, scene.pointerY, 
+      const groundPos = scene.pick(scene.pointerX, scene.pointerY,
         (mesh) => mesh.name === "ground")?.pickedPoint;
       if (groundPos) {
         grabbedBox.position.x = groundPos.x;

@@ -40,5 +40,15 @@ export const sceneConfig = {
       name: "boxMaterial",
       emissiveColor: [0, 0, 0] // Default, changes when grabbed
     }
-  }
+  },
+  models: [
+    {
+      name: "laserCutter",
+      path: "/assets/output/",
+      file: "laser_cutter.glb",
+      position: [0, 0, 0],
+      scaling: [1, 1, 1],
+      rotation: [0, 0, 0]
+    }
+  ]
 };
