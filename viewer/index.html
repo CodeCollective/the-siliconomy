@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Babylon.js Model Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="viewer-container">
+        <canvas id="renderCanvas"></canvas>
+        <div id="loading">Initializing...</div>
+        <div id="error"></div>
+      </div>
+      
+      <div class="menu-container">
+        <button id="toggleMenu" class="menu-toggle">☰</button>
+        <div id="modelMenu" class="model-menu">
+          <h3>Models</h3>
+          <div id="modelList" class="model-list">
+            <!-- Models will be added here dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="viewer.js"></script>
+  </body>
+</html>

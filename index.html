@@ -1,18 +1,464 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Babylon.js VR Grab Demo</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <canvas id="renderCanvas"></canvas>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>A-Frame VR Scene with Movable Models</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Babylon.js core and dependencies via CDN -->
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-  <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
-  <script src="https://cdn.babylonjs.com/webxr/babylon.webxr.min.js"></script>
-  <script type="module" src="app.js"></script>
-</body>
+    <!-- A-Frame (latest) -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+    <!-- Physics system (BufferGeometry compatible) -->
+    <script src="https://cdn.jsdelivr.net/npm/@c-frame/physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
+
+    <!-- Super Hands for grabbing interaction -->
+    <script src="https://unpkg.com/super-hands/dist/super-hands.min.js"></script>
+
+    <!-- Simple movement component (custom) -->
+
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      
+      /* VR Button Styling */
+      .a-enter-vr-button {
+        position: fixed !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        z-index: 999999 !important;
+        background: rgba(0, 0, 0, 0.8) !important;
+        color: white !important;
+        border: 2px solid #fff !important;
+        border-radius: 8px !important;
+        padding: 12px 20px !important;
+        font-size: 16px !important;
+        font-weight: bold !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3) !important;
+      }
+      
+      .a-enter-vr-button:hover {
+        background: rgba(0, 0, 0, 0.9) !important;
+        transform: scale(1.05) !important;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4) !important;
+      }
+
+      .a-enter-vr-button:active {
+        transform: scale(0.95) !important;
+      }
+
+      /* Loading indicator */
+      .loading-indicator {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 20px;
+        border-radius: 8px;
+        font-size: 18px;
+        z-index: 1000;
+        display: none;
+      }
+
+      /* Instructions overlay */
+      .instructions {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        font-size: 14px;
+        max-width: 300px;
+        z-index: 1000;
+      }
+
+      /* Hide instructions in VR */
+      .a-enter-vr .instructions {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="loading-indicator" id="loadingIndicator">Loading models...</div>
+    
+    <div class="instructions">
+      <strong>Controls:</strong><br>
+      • Desktop: WASD to move, Mouse to look, Click and drag to move models<br>
+      • VR: Use thumbstick/trackpad to move, grab objects with trigger<br>
+      • Look around by moving your head/mouse
+    </div>
+
+    <a-scene 
+      physics="gravity: -9.8" 
+      embedded 
+      style="height: 100vh; width: 100vw;"
+      vr-mode-ui="enabled: true"
+      background="color: #87CEEB"
+    >
+
+      <!-- Asset Management -->
+      <a-assets id="model-assets">
+        <!-- Preload some basic materials -->
+        <a-mixin id="grabbable-object" 
+          class="clickable"
+          grabbable=""
+          dynamic-body="mass: 1"
+          geometry="primitive: box; width: 1; height: 1; depth: 1"
+          material="color: #4CC3D9"
+        ></a-mixin>
+      </a-assets>
+
+      <!-- Camera Rig with simple movement -->
+      <a-entity 
+        id="cameraRig" 
+        position="0 1.6 2"
+        simple-movement
+      >
+        <a-camera 
+          look-controls="enabled: true"
+          wasd-controls="enabled: true"
+          cursor="rayOrigin: mouse"
+        >
+          <!-- Cursor for desktop interaction -->
+          <a-cursor 
+            raycaster="objects: .clickable"
+            geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
+            material="color: white; shader: flat"
+            position="0 0 -1"
+          ></a-cursor>
+        </a-camera>
+
+        <!-- Right Hand Controller with fixed raycaster -->
+        <a-entity 
+          id="rightHand"
+          hand-controls="hand: right; handModelStyle: lowPoly; color: #ffcc99"
+          laser-controls="hand: right"
+          raycaster="objects: .clickable; far: 10; direction: 0 0 -1"
+          sphere-collider="objects: .clickable"
+          super-hands="colliderEvent: raycaster-intersection;
+                       colliderEventProperty: els;
+                       colliderEndEvent: raycaster-intersection-cleared;
+                       colliderEndEventProperty: clearedEls"
+        >
+          <!-- Visual ray indicator -->
+          <a-entity
+            geometry="primitive: cylinder; radius: 0.002; height: 5"
+            material="color: #ff0000; opacity: 0.3"
+            position="0 0 -2.5"
+            rotation="90 0 0"
+            visible="false"
+            id="right-ray"
+          ></a-entity>
+        </a-entity>
+        
+        <!-- Left Hand Controller with fixed raycaster -->
+        <a-entity 
+          id="leftHand"
+          hand-controls="hand: left; handModelStyle: lowPoly; color: #ffcc99"
+          laser-controls="hand: left"
+          raycaster="objects: .clickable; far: 10; direction: 0 0 -1"
+          sphere-collider="objects: .clickable"
+          super-hands="colliderEvent: raycaster-intersection;
+                       colliderEventProperty: els;
+                       colliderEndEvent: raycaster-intersection-cleared;
+                       colliderEndEventProperty: clearedEls"
+        >
+          <!-- Visual ray indicator -->
+          <a-entity
+            geometry="primitive: cylinder; radius: 0.002; height: 5"
+            material="color: #0000ff; opacity: 0.3"
+            position="0 0 -2.5"
+            rotation="90 0 0"
+            visible="false"
+            id="left-ray"
+          ></a-entity>
+        </a-entity>
+      </a-entity>
+
+      <!-- Model container -->
+      <a-entity id="model-container"></a-entity>
+
+      <!-- Fallback objects in case models don't load -->
+      <a-entity id="fallback-objects" visible="false">
+        <a-box mixin="grabbable-object" position="-2 1 -3" color="#FF6B6B"></a-box>
+        <a-sphere class="clickable grabbable" dynamic-body="mass: 1" position="0 1 -3" radius="0.5" color="#4ECDC4"></a-sphere>
+        <a-cylinder class="clickable grabbable" dynamic-body="mass: 1" position="2 1 -3" radius="0.5" height="1" color="#45B7D1"></a-cylinder>
+      </a-entity>
+
+      <!-- Ground plane with better physics -->
+      <a-plane 
+        rotation="-90 0 0" 
+        width="50" 
+        height="50" 
+        color="#7BC8A4" 
+        static-body
+        shadow="receive: true"
+      ></a-plane>
+
+      <!-- Navigation mesh (invisible collision for movement) -->
+      <a-plane 
+        rotation="-90 0 0" 
+        width="50" 
+        height="50" 
+        color="#7BC8A4" 
+        visible="false"
+        position="0 0.01 0"
+      ></a-plane>
+
+      <!-- Boundary walls (invisible) -->
+      <a-box position="0 2 -25" width="50" height="4" depth="1" visible="false" static-body></a-box>
+      <a-box position="0 2 25" width="50" height="4" depth="1" visible="false" static-body></a-box>
+      <a-box position="-25 2 0" width="1" height="4" depth="50" visible="false" static-body></a-box>
+      <a-box position="25 2 0" width="1" height="4" depth="50" visible="false" static-body></a-box>
+
+      <!-- Improved lighting -->
+      <a-light type="directional" intensity="0.6" position="2 4 3" shadow="cast: true"></a-light>
+      <a-light type="ambient" intensity="0.4" color="#404040"></a-light>
+      <a-light type="point" intensity="0.3" position="0 3 0" color="#ffffff"></a-light>
+
+      <!-- Sky -->
+      <a-sky color="#87CEEB"></a-sky>
+
+      <!-- Model loading script with error handling -->
+      <script>
+        // Show loading indicator
+        document.getElementById('loadingIndicator').style.display = 'block';
+
+        // Function to create fallback objects
+        function createFallbackObjects() {
+          console.log('Using fallback objects instead of models');
+          document.getElementById('fallback-objects').setAttribute('visible', 'true');
+        }
+
+        // Function to load models
+        function loadModels() {
+          fetch('/models.json')
+            .then(res => {
+              if (!res.ok) {
+                throw new Error('Models file not found');
+              }
+              return res.json();
+            })
+            .then(models => {
+              const container = document.getElementById('model-container');
+              let loadedCount = 0;
+              
+              if (!models || models.length === 0) {
+                throw new Error('No models found');
+              }
+
+              models.forEach((path, index) => {
+                const entity = document.createElement('a-entity');
+                entity.setAttribute('gltf-model', path);
+                entity.setAttribute('position', `${(index - Math.floor(models.length/2)) * 2} 1 -3`);
+                entity.setAttribute('scale', '0.001 0.001 0.001');
+                entity.setAttribute('class', 'clickable');
+                entity.setAttribute('grabbable', '');
+                entity.setAttribute('dynamic-body', 'mass: 1');
+                entity.setAttribute('rotation', '0 180 0');
+                entity.setAttribute('shadow', 'cast: true');
+                
+                // Add error handling for individual models
+                entity.addEventListener('model-loaded', () => {
+                  loadedCount++;
+                  if (loadedCount === models.length) {
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                  }
+                });
+                
+                entity.addEventListener('model-error', () => {
+                  console.warn(`Failed to load model: ${path}`);
+                  // Create a fallback box for this model
+                  const fallback = document.createElement('a-box');
+                  fallback.setAttribute('position', entity.getAttribute('position'));
+                  fallback.setAttribute('class', 'clickable');
+                  fallback.setAttribute('grabbable', '');
+                  fallback.setAttribute('dynamic-body', 'mass: 1');
+                  fallback.setAttribute('color', '#FF6B6B');
+                  fallback.setAttribute('width', '1');
+                  fallback.setAttribute('height', '1');
+                  fallback.setAttribute('depth', '1');
+                  container.appendChild(fallback);
+                  entity.remove();
+                });
+                
+                container.appendChild(entity);
+              });
+              
+              // Timeout fallback
+              setTimeout(() => {
+                if (loadedCount === 0) {
+                  createFallbackObjects();
+                  document.getElementById('loadingIndicator').style.display = 'none';
+                }
+              }, 5000);
+            })
+            .catch(error => {
+              console.error('Error loading models:', error);
+              createFallbackObjects();
+              document.getElementById('loadingIndicator').style.display = 'none';
+            });
+        }
+
+        // Wait for A-Frame to initialize
+        document.addEventListener('DOMContentLoaded', () => {
+          setTimeout(loadModels, 100);
+        });
+
+        // Handle VR enter/exit events
+        document.querySelector('a-scene').addEventListener('enter-vr', () => {
+          console.log('Entered VR mode');
+          // Show ray indicators in VR
+          document.getElementById('right-ray').setAttribute('visible', 'true');
+          document.getElementById('left-ray').setAttribute('visible', 'true');
+        });
+        
+        document.querySelector('a-scene').addEventListener('exit-vr', () => {
+          console.log('Exited VR mode');
+          // Hide ray indicators outside VR
+          document.getElementById('right-ray').setAttribute('visible', 'false');
+          document.getElementById('left-ray').setAttribute('visible', 'false');
+        });
+
+        // Custom component to handle simple movement
+        AFRAME.registerComponent('simple-movement', {
+          init: function () {
+            this.velocity = new THREE.Vector3();
+            this.speed = 5;
+            this.keys = {};
+            
+            // Key event listeners
+            window.addEventListener('keydown', (e) => {
+              this.keys[e.code] = true;
+            });
+            
+            window.addEventListener('keyup', (e) => {
+              this.keys[e.code] = false;
+            });
+          },
+          
+          tick: function (time, deltaTime) {
+            const data = this.data;
+            const el = this.el;
+            const velocity = this.velocity;
+            
+            // Get camera direction
+            const camera = el.querySelector('a-camera');
+            if (!camera) return;
+            
+            const cameraEl = camera.object3D;
+            const direction = new THREE.Vector3();
+            cameraEl.getWorldDirection(direction);
+            
+            // Reset velocity
+            velocity.set(0, 0, 0);
+            
+            // Movement based on WASD keys
+            if (this.keys['KeyW']) {
+              velocity.add(direction.multiplyScalar(this.speed * deltaTime / 1000));
+            }
+            if (this.keys['KeyS']) {
+              velocity.add(direction.multiplyScalar(-this.speed * deltaTime / 1000));
+            }
+            if (this.keys['KeyA']) {
+              const left = new THREE.Vector3();
+              left.crossVectors(direction, cameraEl.up).normalize();
+              velocity.add(left.multiplyScalar(-this.speed * deltaTime / 1000));
+            }
+            if (this.keys['KeyD']) {
+              const right = new THREE.Vector3();
+              right.crossVectors(direction, cameraEl.up).normalize();
+              velocity.add(right.multiplyScalar(this.speed * deltaTime / 1000));
+            }
+            
+            // Apply movement
+            if (velocity.length() > 0) {
+              const currentPosition = el.getAttribute('position');
+              el.setAttribute('position', {
+                x: currentPosition.x + velocity.x,
+                y: currentPosition.y, // Keep Y fixed for ground movement
+                z: currentPosition.z + velocity.z
+              });
+            }
+          }
+        });
+
+        // Custom component to handle VR thumbstick movement
+        AFRAME.registerComponent('thumbstick-movement', {
+          init: function () {
+            this.velocity = new THREE.Vector3();
+            this.speed = 3;
+            
+            // Listen for thumbstick events
+            this.el.addEventListener('thumbstickmoved', (evt) => {
+              const axes = evt.detail;
+              if (Math.abs(axes.x) > 0.1 || Math.abs(axes.y) > 0.1) {
+                this.moveWithThumbstick(axes.x, axes.y);
+              }
+            });
+          },
+          
+          moveWithThumbstick: function(x, y) {
+            const cameraRig = document.getElementById('cameraRig');
+            const camera = cameraRig.querySelector('a-camera');
+            
+            if (!camera) return;
+            
+            const cameraEl = camera.object3D;
+            const direction = new THREE.Vector3();
+            cameraEl.getWorldDirection(direction);
+            
+            // Calculate movement vector
+            const moveVector = new THREE.Vector3();
+            moveVector.add(direction.multiplyScalar(-y * this.speed * 0.016)); // Forward/backward
+            
+            const right = new THREE.Vector3();
+            right.crossVectors(direction, cameraEl.up).normalize();
+            moveVector.add(right.multiplyScalar(x * this.speed * 0.016)); // Left/right
+            
+            // Apply movement
+            const currentPosition = cameraRig.getAttribute('position');
+            cameraRig.setAttribute('position', {
+              x: currentPosition.x + moveVector.x,
+              y: currentPosition.y,
+              z: currentPosition.z + moveVector.z
+            });
+          }
+        });
+
+        // Custom component to handle teleportation
+        AFRAME.registerComponent('teleport-controls', {
+          init: function () {
+            this.el.addEventListener('thumbstickdown', (evt) => {
+              // Handle teleportation logic here
+              console.log('Thumbstick pressed for teleportation');
+            });
+          }
+        });
+
+        // Add movement controls to controllers after scene loads
+        document.querySelector('a-scene').addEventListener('loaded', () => {
+          const rightHand = document.getElementById('rightHand');
+          const leftHand = document.getElementById('leftHand');
+          
+          if (rightHand) {
+            rightHand.setAttribute('teleport-controls', '');
+            rightHand.setAttribute('thumbstick-movement', '');
+          }
+          if (leftHand) {
+            leftHand.setAttribute('teleport-controls', '');
+            leftHand.setAttribute('thumbstick-movement', '');
+          }
+        });
+      </script>
+    </a-scene>
+  </body>
 </html>
