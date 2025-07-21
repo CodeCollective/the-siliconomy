@@ -1,0 +1,1 @@
+gltf-transform inspect laser_cutter.glb

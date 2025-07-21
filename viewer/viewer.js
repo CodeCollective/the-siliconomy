@@ -34,6 +34,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         const light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), scene);
         const light2 = new BABYLON.DirectionalLight("light2", new BABYLON.Vector3(0, -1, 1), scene);
         light2.intensity = 0.5;
+        const ambientLight = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
+        ambientLight.intensity = 1;
 
         // Ground
         const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 2000, height: 2000, color: "green" }, scene);

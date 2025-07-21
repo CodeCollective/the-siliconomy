@@ -3,14 +3,21 @@ import numpy as np
 from shapely.geometry import Polygon, MultiPolygon
 from PIL import ImageFont, Image, ImageDraw
 from shapely.ops import unary_union
+from trimesh.visual.texture import SimpleMaterial, TextureVisuals
 import hashlib
 import pickle
 import os
 here = os.path.dirname(os.path.abspath(__file__))
+hash_obj = hashlib.sha256()
+
+cache_dir = os.path.join(here, "cache")
+
+# Create cache directory if it doesn't exist
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
 
 def get_parameter_hash(text, font_path, font_size, depth):
     """Generate a reliable hash of all parameters that affect the output."""
-    hash_obj = hashlib.sha256()
     hash_obj.update(text.encode('utf-8'))
     hash_obj.update(font_path.encode('utf-8'))
     hash_obj.update(str(font_size).encode('utf-8'))
@@ -22,10 +29,6 @@ def create_text_mesh_custom_font(text, font_path=os.path.join(here, "nofile"), f
     Render text using a custom TTF font via Pillow, export to SVG,
     parse path with svgpathtools, then extrude to a 3D mesh.
     """
-    # Create cache directory if it doesn't exist
-    cache_dir = "./cache"
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
     
     # Generate hash for the current parameters
     param_hash = get_parameter_hash(text, font_path, font_size, depth)
@@ -86,3 +89,157 @@ def create_text_mesh_custom_font(text, font_path=os.path.join(here, "nofile"), f
         print(f"Warning: Failed to cache mesh ({str(e)})")
 
     return mesh
+
+
+def generate_uv_coordinates(mesh):
+    """Generate simple UV coordinates using bounding box projection"""
+    vertices = mesh.vertices
+    bounds = mesh.bounds
+    
+    # Get the size of the bounding box
+    size = bounds[1] - bounds[0]
+    
+    # Project to UV coordinates (0-1 range)
+    u = (vertices[:, 0] - bounds[0, 0]) / max(size[0], 1e-8)
+    v = (vertices[:, 1] - bounds[0, 1]) / max(size[1], 1e-8)
+    
+    # Stack to create UV array
+    uv = np.column_stack([u, v])
+    
+    # Clamp to [0, 1] range
+    uv = np.clip(uv, 0, 1)
+    
+    return uv
+
+
+def add_texture(mesh, texture_filename):
+    """Add texture to a mesh with automatically generated UV coordinates"""
+    image_path = os.path.join(here, 'textures', texture_filename)
+    im = Image.open(image_path)
+    
+    # Generate UV coordinates
+    uv = generate_uv_coordinates(mesh)
+    
+    mesh.visual = TextureVisuals(
+        uv=uv,
+        material=SimpleMaterial(image=im)
+    )
+    return mesh
+
+def add_texture_simple(mesh, texture_filename):
+    """Apply the center pixel of the texture to the entire mesh."""
+    image_path = os.path.join(here, 'textures', texture_filename)
+    im = Image.open(image_path)
+
+    # Get number of vertices
+    num_vertices = len(mesh.vertices)
+
+    # Assign UV coordinates at the center of the texture to all vertices
+    uv = np.tile([0.5, 0.5], (num_vertices, 1))
+
+    mesh.visual = TextureVisuals(
+        uv=uv,
+        material=SimpleMaterial(image=im)
+    )
+    return mesh
+
+def create_rect_with_hole(width, height, top, bottom, left, right, 
+                         plane="xy", center_planes="xyz", extrusion_height=4):
+    """
+    Create a 3D extruded rectangular polygon with a rectangular hole.
+    
+    Parameters:
+        width (float): Width of the outer rectangle.
+        height (float): Height of the outer rectangle.
+        top (float): Top margin between outer and inner rectangle.
+        bottom (float): Bottom margin.
+        left (float): Left margin.
+        right (float): Right margin.
+        plane (str): Plane to create the 2D profile in ('xy', 'xz', 'yz').
+        center_planes (str/list): Which planes to center the object in, as:
+                                 - String: any combination of 'x','y','z' (e.g. "xy", "yzx")
+                                 - List: [x,y,z] where 1=center, 0=don't center (e.g. [1,0,1])
+        extrusion_height (float): Height of extrusion in 3D.
+    
+    Returns:
+        trimesh.Trimesh: A 3D mesh of the extruded rectangle with hole.
+    """
+    # Convert center_planes string to list format if needed
+    if isinstance(center_planes, str):
+        center_list = [0, 0, 0]
+        if 'x' in center_planes.lower(): center_list[0] = 1
+        if 'y' in center_planes.lower(): center_list[1] = 1
+        if 'z' in center_planes.lower(): center_list[2] = 1
+        center_planes = center_list
+    
+    # Create outer rectangle coordinates (counter-clockwise)
+    outer_2d = np.array([
+        [-width / 2, -height / 2],
+        [ width / 2, -height / 2],
+        [ width / 2,  height / 2],
+        [-width / 2,  height / 2]
+    ])
+
+    # Create inner rectangle (hole, clockwise winding)
+    inner_2d = np.array([
+        [-width / 2 + left,  height / 2 - top],
+        [ width / 2 - right,  height / 2 - top],
+        [ width / 2 - right, -height / 2 + bottom],
+        [-width / 2 + left, -height / 2 + bottom]
+    ])
+
+    # Always create polygon in XY plane first, then transform
+    polygon_with_hole = Polygon(outer_2d, [inner_2d])
+    mesh = trimesh.creation.extrude_polygon(polygon_with_hole, height=extrusion_height)
+    
+    # Apply plane transformation BEFORE centering
+    if plane == "xz":
+        # Rotate around X axis to move XY to XZ
+        mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi/2, [1,0,0]))
+    elif plane == "yz":
+        # Rotate around Y axis to move XY to YZ  
+        mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [0,1,0]))
+    
+    # Apply centering AFTER plane transformation
+    if any(center_planes):
+        bounds = mesh.bounds
+        center_offset = np.zeros(3)
+        for i, should_center in enumerate(center_planes):
+            if should_center:
+                center_offset[i] = -(bounds[0][i] + bounds[1][i]) / 2
+        
+        if np.any(center_offset):
+            translation_matrix = trimesh.transformations.translation_matrix(center_offset)
+            mesh.apply_transform(translation_matrix)
+    
+    return mesh
+
+def generateHoneycomb(machine):
+    hash_object = hashlib.sha256(str(machine).encode())  # Convert string to bytes
+    hex_dig = hash_object.hexdigest()            # Get hexadecimal digest
+    filename = os.path.join(cache_dir, "honeycomb" + hex_dig + ".pkl")
+    if os.path.exists(filename):
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+        
+    # Honeycomb pattern
+    honeycomb_list = []
+    hex_radius = 5
+    for x in np.arange(-machine.x / 2 + 60, machine.x / 2 - 60, hex_radius * 1.5):
+        for y in np.arange(-machine.z / 2 + 60, machine.z / 2 - 60, hex_radius * np.sqrt(3)):
+            hexagon = trimesh.creation.cylinder(
+                radius=hex_radius*0.6,
+                height=3,
+                sections=6,
+                transform=trimesh.transformations.translation_matrix([
+                    x + (hex_radius * 0.75 if (y / hex_radius) % 2 else 0),
+                    y,
+                    machine.y / 2 + 12.5
+                ])
+            )
+            add_texture(hexagon, 'aluminum.jpg')
+            honeycomb_list.append(hexagon)
+    retval = trimesh.util.concatenate(honeycomb_list)
+    with open(filename, 'wb') as f:
+        pickle.dump(retval, f)
+    return retval
