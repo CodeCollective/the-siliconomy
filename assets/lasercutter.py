@@ -30,26 +30,30 @@ ccrotation2 = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
 # Create the left enclosure
 # Want a vertical rectangle on YZ plane, thickness in X
 enclosure_left = create_rect_with_hole(
-    width=machine.y,         # along Y
-    height=machine.z,        # along Z
-    top=50, bottom=50, left=50, right=50,
-    plane="yz",              # this means we rotate the XY polygon to YZ
+    width=machine.z,  # along Y
+    height=machine.y,  # along Z
+    top=50,
+    bottom=50,
+    left=50,
+    right=50,
+    center_planes="xy",
+    plane="yz",  # this means we rotate the XY polygon to YZ
     extrusion_height=aluminum_thickness,  # thickness goes into X direction after rotation
 )
-
-# Apply translation
-enclosure_left.apply_transform(translation_matrix([machine.x / 2 - aluminum_thickness / 2, 0, 0]))
-
 # Create the right enclosure
-enclosure_right = create_rect_with_hole(
-    machine.y, machine.z, 50, 50, 50, 50, plane="yz"
+enclosure_right = enclosure_left.copy()
+# Apply translation
+enclosure_left.apply_transform(
+    translation_matrix([machine.x / 2 - aluminum_thickness / 2, 0, 0])
 )
 # Apply translation
-enclosure_right.apply_transform(translation_matrix([-machine.x / 2 + aluminum_thickness / 2, 0, 0]))
+enclosure_right.apply_transform(
+    translation_matrix([-machine.x / 2 + aluminum_thickness / 2, 0, 0])
+)
 
-# Create the right enclosure
+# Create the front enclosure
 enclosure_front = create_rect_with_hole(
-    machine.x, machine.y, 50, 50, 50, 50, plane="xz"
+    machine.x, machine.z, 50, 50, 50, 50, plane="xz"
 )
 # Apply translation
 enclosure_front.apply_transform(translation_matrix([0, machine.y / 2, 0]))
@@ -64,7 +68,7 @@ components["enclosure_front"] = enclosure_front
 # Cutting components["bed"]
 components["bed"] = box(
     extents=[machine.x, machine.y, 5],
-    transform=trimesh.transformations.translation_matrix([0, 0, machine.y / 2]),
+    transform=trimesh.transformations.translation_matrix([0, 0, machine.z]),
 )
 add_texture(components["bed"], "aluminum.jpg")
 
@@ -72,14 +76,14 @@ add_texture(components["bed"], "aluminum.jpg")
 components["laser_body"] = cylinder(
     radius=15,
     height=40,
-    transform=trimesh.transformations.translation_matrix([0, 0, machine.y / 2 + 60]),
+    transform=trimesh.transformations.translation_matrix([0, 0, machine.z]),
 )
 add_texture(components["laser_body"], "steel.jpg")
 
 components["laser_lens"] = cylinder(
     radius=8,
     height=5,
-    transform=trimesh.transformations.translation_matrix([0, 0, machine.y / 2 + 10]),
+    transform=trimesh.transformations.translation_matrix([0, 0, machine.z + 10]),
 )
 add_texture(components["laser_lens"], "lens.png")
 
@@ -107,9 +111,7 @@ components["belt_pulley"] = cylinder(
 
 # Control components["control_panel"]
 cp_center = [-machine.x / 2, machine.y / 2, machine.z / 2 - 100]
-components["control_panel"] = box(
-    extents=[150, material_thickness, 80]
-)
+components["control_panel"] = box(extents=[150, material_thickness, 80])
 components["control_panel"].apply_translation(cp_center)
 add_texture(components["control_panel"], "panel.jpg")
 
@@ -123,7 +125,7 @@ for i in range(button_count):
     )
     button.apply_transform(ccrotation1)
     button.apply_translation(cp_center)
-    button.apply_translation([i * 15 - 15*(button_count/2.0), 0, 0])
+    button.apply_translation([i * 15 - 15 * (button_count / 2.0), 0, 0])
     add_texture(button, "red.jpg")
     buttons.append(button)
 
@@ -132,7 +134,7 @@ components["display"] = box(
     extents=[60, 2, 30],
 )
 components["display"].apply_translation(cp_center)
-components["display"].apply_translation([0,0,-1])
+components["display"].apply_translation([0, 0, -1])
 add_texture(components["display"], "lcd.png")
 
 # Ventilation

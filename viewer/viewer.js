@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         // Ground
         const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 2000, height: 2000, color: "green" }, scene);
-        ground.position.y = -1;
+        ground.position.y = 0;
 
         // Try to load models.json
         loading.textContent = "Loading model list...";
