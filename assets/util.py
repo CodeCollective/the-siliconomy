@@ -6,6 +6,7 @@ from shapely.ops import unary_union
 from trimesh.visual.texture import SimpleMaterial, TextureVisuals
 import hashlib
 import pickle
+from trimesh.transformations import rotation_matrix, translation_matrix
 import os
 here = os.path.dirname(os.path.abspath(__file__))
 hash_obj = hashlib.sha256()
@@ -15,6 +16,60 @@ cache_dir = os.path.join(here, "cache")
 # Create cache directory if it doesn't exist
 if not os.path.exists(cache_dir):
     os.makedirs(cache_dir)
+
+
+def rotate(mesh, angle=[0, 0, 0]):
+    """
+    Rotate a trimesh object by specified angles (in degrees) about x, y, and z axes.
+
+    Parameters:
+    mesh (trimesh.Trimesh): The mesh to rotate.
+    angle (list or tuple): Rotation angles in degrees for [x, y, z] axes.
+
+    Returns:
+    trimesh.Trimesh: The rotated mesh.
+    """
+    # Convert degrees to radians
+    angle_rad = np.radians(angle)
+
+    # Define the origin for rotation (can be the mesh centroid or origin)
+    origin = mesh.centroid
+
+    # Rotation about X axis
+    rot_x = rotation_matrix(angle_rad[0], [1, 0, 0], point=origin)
+    # Rotation about Y axis
+    rot_y = rotation_matrix(angle_rad[1], [0, 1, 0], point=origin)
+    # Rotation about Z axis
+    rot_z = rotation_matrix(angle_rad[2], [0, 0, 1], point=origin)
+
+    # Combine rotations (Z * Y * X order)
+    transform = rot_z @ rot_y @ rot_x
+
+    # Apply the transformation
+    mesh.apply_transform(transform)
+
+    return mesh
+import numpy as np
+from trimesh.transformations import translation_matrix
+
+def translate(mesh, offset=[0, 0, 0]):
+    """
+    Translate a trimesh object by a given offset vector.
+
+    Parameters:
+    mesh (trimesh.Trimesh): The mesh to translate.
+    offset (list or tuple): Translation vector [x, y, z].
+
+    Returns:
+    trimesh.Trimesh: The translated mesh.
+    """
+    # Create the translation matrix
+    tform = translation_matrix(offset)
+
+    # Apply the transformation
+    mesh.apply_transform(tform)
+
+    return mesh
 
 def get_parameter_hash(text, font_path, font_size, depth):
     """Generate a reliable hash of all parameters that affect the output."""
@@ -164,14 +219,6 @@ def create_rect_with_hole(width, height, top, bottom, left, right,
     Returns:
         trimesh.Trimesh: A 3D mesh of the extruded rectangle with hole.
     """
-    # Convert center_planes string to list format if needed
-    if isinstance(center_planes, str):
-        center_list = [0, 0, 0]
-        if 'x' in center_planes.lower(): center_list[0] = 1
-        if 'y' in center_planes.lower(): center_list[1] = 1
-        if 'z' in center_planes.lower(): center_list[2] = 1
-        center_planes = center_list
-    
     # Create outer rectangle coordinates (counter-clockwise)
     outer_2d = np.array([
         [-width / 2, -height / 2],
@@ -191,26 +238,6 @@ def create_rect_with_hole(width, height, top, bottom, left, right,
     # Always create polygon in XY plane first, then transform
     polygon_with_hole = Polygon(outer_2d, [inner_2d])
     mesh = trimesh.creation.extrude_polygon(polygon_with_hole, height=extrusion_height)
-    
-    # Apply plane transformation BEFORE centering
-    if plane == "xz":
-        # Rotate around X axis to move XY to XZ
-        mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi/2, [1,0,0]))
-    elif plane == "yz":
-        # Rotate around Y axis to move XY to YZ  
-        mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [0,1,0]))
-    
-    # Apply centering AFTER plane transformation
-    if any(center_planes):
-        bounds = mesh.bounds
-        center_offset = np.zeros(3)
-        for i, should_center in enumerate(center_planes):
-            if should_center:
-                center_offset[i] = -(bounds[0][i] + bounds[1][i]) / 2
-        
-        if np.any(center_offset):
-            translation_matrix = trimesh.transformations.translation_matrix(center_offset)
-            mesh.apply_transform(translation_matrix)
     
     return mesh
 
@@ -234,10 +261,9 @@ def generateHoneycomb(machine):
                 transform=trimesh.transformations.translation_matrix([
                     x + (hex_radius * 0.75 if (y / hex_radius) % 2 else 0),
                     y,
-                    machine.y / 2 + 12.5
+                    0
                 ])
             )
-            add_texture(hexagon, 'aluminum.jpg')
             honeycomb_list.append(hexagon)
     retval = trimesh.util.concatenate(honeycomb_list)
     with open(filename, 'wb') as f:
