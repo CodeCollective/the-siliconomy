@@ -1,4 +1,5 @@
 import numpy as np
+
 import trimesh
 from trimesh.creation import cylinder, box, icosphere
 from trimesh.boolean import difference
@@ -58,17 +59,25 @@ enclosure_front = create_rect_with_hole(
     machine.x, machine.z, 50, 50, 50, 50, plane="xz"
 )
 rotate(enclosure_front, [90, 0, 0])
+enclosure_rear = deepcopy(enclosure_front)
 # Apply translation
 translate(enclosure_front, [0, machine.y / 2, machine.z / 2])
+translate(enclosure_rear, [0, -machine.y / 2, machine.z / 2])
 
 door1 = box([machine.x / 2 - 50, machine.z - 100, aluminum_thickness])
 add_texture_simple(door1, "red.jpg")
 rotate(door1, [90, 0, 0])
 door2 = deepcopy(door1)
+door5 = deepcopy(door1)
+door6 = deepcopy(door1)
 translate(door1, [(machine.x - 100 + 6) / 4, machine.y / 2, machine.z / 2])
 components["door1"] = door1
 translate(door2, [-(machine.x - 100 + 6) / 4, machine.y / 2, machine.z / 2])
 components["door2"] = door2
+translate(door5, [(machine.x - 100 + 6) / 4, -machine.y / 2, machine.z / 2])
+components["door5"] = door5
+translate(door6, [-(machine.x - 100 + 6) / 4, -machine.y / 2, machine.z / 2])
+components["door6"] = door6
 
 door3 = box([machine.y - 100, machine.z - 100, aluminum_thickness])
 add_texture_simple(door3, "red.jpg")
@@ -82,9 +91,11 @@ components["door4"] = door4
 add_texture_simple(enclosure_left, "aluminum.jpg")
 add_texture_simple(enclosure_right, "aluminum.jpg")
 add_texture_simple(enclosure_front, "aluminum.jpg")
+add_texture_simple(enclosure_rear, "aluminum.jpg")
 components["enclosure_left"] = enclosure_left
 components["enclosure_right"] = enclosure_right
 components["enclosure_front"] = enclosure_front
+components["enclosure_rear"] = enclosure_rear
 
 # Cutting components["bed"]
 components["bed"] = box(
@@ -110,74 +121,93 @@ add_texture(components["laser_lens"], "red.jpg")
 
 # Side piece
 sp_total_height = 200
-sp_height = sp_total_height//2
-sp_x = 80
+sp_bend_point = 100
+sp_width = 60
+
 # Define 2D profile as Shapely polygon
 points = [
-    [-machine.y / 2, 0],
-    [-machine.y / 2, sp_total_height],
-    [machine.y / 2 - sp_height, sp_total_height],
-    [machine.y / 2, sp_height],
-    [machine.y / 2, 0]
+    [0, 0],
+    [0, sp_total_height],
+    [machine.y - sp_bend_point, sp_total_height],
+    [machine.y, sp_bend_point],
+    [machine.y, 0]
 ]
 profile = Polygon(points)
 
 # Extrude the 2D profile along the Z-axis
-left_extension = trimesh.creation.extrude_polygon(profile, height=sp_x)
+left_extension = trimesh.creation.extrude_polygon(profile, height=sp_width)
+translate(left_extension, [-machine.y/2, -sp_total_height/2, -sp_width/2])
 rotate(left_extension, [90,0,90])
 add_texture(left_extension, "metal.jpg")
 right_extension = deepcopy(left_extension)
-translate(left_extension, [machine.x/2-sp_x/2,-sp_height,machine.z])
+translate(left_extension, [machine.x/2-sp_width/2,0,machine.z+sp_total_height/2])
 components["left_extension"] = left_extension
-translate(right_extension, [-machine.x/2+sp_x/2,-sp_height,machine.z])
+translate(right_extension, [-machine.x/2+sp_width/2,0,machine.z+sp_total_height/2])
 components["right_extension"] = right_extension
 
 rear_extension = box([machine.x, 20, sp_total_height])
 add_texture(rear_extension, "metal.jpg")
-translate(rear_extension, [0, -machine.y/2, machine.z+40])
+translate(rear_extension, [0, -machine.y/2+20/2, machine.z+sp_total_height/2])
 components["rear_extension"] = rear_extension
 
-from shapely.geometry import LineString
-import trimesh
+front_extension = box([machine.x-sp_width*2, 20, sp_bend_point/2])
+add_texture(front_extension, "metal.jpg")
+translate(front_extension, [0, machine.y/2-20/2, machine.z+sp_bend_point/4])
+components["front_extension"] = front_extension
+
 
 # Define a tapered side cover profile
 line = LineString([
-    (machine.y / 2 - sp_height, sp_total_height),
-    (machine.y / 2, sp_height),
-    (machine.y / 2, sp_height - 30)
+    (machine.y / 2 - sp_bend_point, sp_total_height),
+    (machine.y / 2, sp_bend_point),
+    (machine.y / 2, sp_bend_point/2)
 ])
 
 # Buffer the line to give it thickness (10 units tall)
 profile = line.buffer(5, cap_style=2)
 
 # Extrude the 2D profile along Z
-cover_length = machine.x - sp_x * 2
+cover_length = machine.x - sp_width * 2
 cover = trimesh.creation.extrude_polygon(profile, height=cover_length)
 
 # Apply transformations: center, orient, and position
 cover.apply_translation([0, 0, -(cover_length) / 2])
 rotate(cover,[90,0,90])
-cover.apply_translation([-250, 90, machine.z+sp_height])
+cover.apply_translation([0, 0, machine.z])
 
 # Add texture and assign to components
 add_texture(cover, "red.jpg")
-components["cover"] = cover
 
+cover2_y = machine.y-sp_bend_point
 cover2 = create_rect_with_hole(width = cover_length, 
-                               height = machine.y-sp_height,
+                               height = cover2_y,
                                top=50,
                                bottom=50,
                                left=50,
                                right=50
                                )
 add_texture(cover2, "red.jpg")
-translate(cover2, [0,0,machine.z + sp_total_height])
-components["cover2"] = cover2
+translate(cover2, [0,-(machine.y-cover2_y)/2,machine.z + sp_total_height])
+components["cover"] = trimesh.util.concatenate([cover, cover2])
+
+glass_top = center(box([cover_length - 100, cover2_y - 100, 10]))
+translate(glass_top, [0,-50,machine.z + sp_total_height])
+# Define the glass material
+# Set a translucent light blue RGBA color (R, G, B, A)
+rgba = [200, 220, 255, 10]  # A = 30/255 ≈ ~12% opacity (mostly transparent)
+# Apply the color to all faces
+glass_material = trimesh.visual.material.PBRMaterial(
+    baseColorFactor=[0.8, 0.9, 1.0, 0.3],  # RGBA
+    metallicFactor=0.2,
+    roughnessFactor=0.1,
+    alphaMode="BLEND"
+)
+glass_top.visual.material = glass_material
+components["glass_top"] = glass_top
 
 # Make it "10 tall" — buffer gives width to the line (extends perpendicular)
 # buffer(5) makes total height 10 units (5 above and below)
 profile = line.buffer(5, cap_style=2)  # cap_style=2 for flat ends
-
 
 
 rail_lift = 40
@@ -196,44 +226,6 @@ rotate(components["x_rail"], [0, 90, 0])
 # Apply transform to lift and center it along the X-axis
 translate(components["x_rail"], [0, 0, machine.z + rail_lift])
 
-
-# Belt pulley
-components["belt_pulley"] = cylinder(
-    radius=5,
-    height=15,
-    transform=trimesh.transformations.translation_matrix(
-        [machine.x / 2 - 40, machine.z / 2 - 40, machine.y / 2 + 60]
-    ),
-)
-
-# Control components["control_panel"]
-cp_center = [-machine.x / 2, machine.y / 2, machine.z / 2 - 100]
-components["control_panel"] = box(extents=[150, material_thickness, 80])
-components["control_panel"].apply_translation(cp_center)
-add_texture(components["control_panel"], "panel.jpg")
-
-# Control buttons
-buttons = []
-button_count = 5
-for i in range(button_count):
-    button = cylinder(
-        radius=5,
-        height=30,
-    )
-    button.apply_transform(ccrotation1)
-    button.apply_translation(cp_center)
-    button.apply_translation([i * 15 - 15 * (button_count / 2.0), 0, 0])
-    add_texture(button, "red.jpg")
-    buttons.append(button)
-
-# Display
-components["display"] = box(
-    extents=[60, 2, 30],
-)
-components["display"].apply_translation(cp_center)
-components["display"].apply_translation([0, 0, -1])
-add_texture(components["display"], "lcd.png")
-
 # Ventilation
 vents = []
 for i in range(8):
@@ -247,11 +239,11 @@ for i in range(8):
 
 # Cables
 cables = []
-for i in range(3):
-    cable = trimesh.creation.capsule(height=machine.y, radius=8)
-    add_texture(cable, "cable.jpg")
-    translate(cable, [machine.x / 2 + 10, machine.z / 2 - 80 - i * 20, machine.z / 2])
-    cables.append(cable)
+exhaust_radius = 40
+exhaust = trimesh.creation.capsule(height=machine.y, radius=exhaust_radius)
+add_texture(exhaust, "cable.jpg")
+translate(exhaust, [machine.x / 2 + 10, 0, machine.y / 2])
+cables.append(exhaust)
 
 # Logo
 logo_mesh = create_text_mesh_custom_font("Code Collective", font_size=50)
@@ -269,7 +261,6 @@ components["honeycomb_mesh"] = generateHoneycomb(machine)
 translate(components["honeycomb_mesh"], [0, 0, machine.z + aluminum_thickness])
 add_texture(components["honeycomb_mesh"], "aluminum.jpg")
 
-components["buttons_mesh"] = trimesh.util.concatenate(buttons)
 components["vents_mesh"] = trimesh.util.concatenate(vents)
 components["cables_mesh"] = trimesh.util.concatenate(cables)
 

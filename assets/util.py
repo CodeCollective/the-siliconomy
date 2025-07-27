@@ -33,7 +33,7 @@ def rotate(mesh, angle=[0, 0, 0]):
     angle_rad = np.radians(angle)
 
     # Define the origin for rotation (can be the mesh centroid or origin)
-    origin = mesh.centroid
+    origin = [0,0,0]
 
     # Rotation about X axis
     rot_x = rotation_matrix(angle_rad[0], [1, 0, 0], point=origin)
@@ -51,6 +51,28 @@ def rotate(mesh, angle=[0, 0, 0]):
     return mesh
 import numpy as np
 from trimesh.transformations import translation_matrix
+from trimesh.transformations import translation_matrix
+
+def center(mesh):
+    """
+    Center a trimesh object with respect to its centroid.
+
+    Parameters:
+    mesh (trimesh.Trimesh): The mesh to center.
+
+    Returns:
+    trimesh.Trimesh: The centered mesh.
+    """
+    # Compute the centroid of the mesh
+    centroid = mesh.centroid
+
+    # Create a translation matrix to move the mesh to the origin
+    tform = translation_matrix(-centroid)
+
+    # Apply the transformation
+    mesh.apply_transform(tform)
+
+    return mesh
 
 def translate(mesh, offset=[0, 0, 0]):
     """
