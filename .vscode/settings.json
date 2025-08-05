@@ -3,7 +3,7 @@
     "commands": [
       {
         "match": ".*lasercutter\\.py$",
-        "cmd": "python ${file}"
+        "cmd": "docker run -v ${fileDirname}:/app -w /app --rm lasercutter:latest python3 lasercutter.py"
       }
     ]
   }

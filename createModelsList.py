@@ -29,7 +29,7 @@ def save_to_json(file_paths, output_file="models.json"):
 
 if __name__ == "__main__":
     # Find all GLB files
-    glb_files = find_glb_files(here)
+    glb_files = find_glb_files(os.path.join(here, "assets"))
     
     # Print found files to console
     print(f"Found {len(glb_files)} .glb files:")

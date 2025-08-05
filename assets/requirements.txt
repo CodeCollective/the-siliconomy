@@ -3,3 +3,4 @@ trimesh
 shapely
 pillow
 mapbox-earcut
+manifold3d

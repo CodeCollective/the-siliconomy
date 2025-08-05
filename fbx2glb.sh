@@ -1,0 +1,1 @@
+blender --background --python fbx2glb.py

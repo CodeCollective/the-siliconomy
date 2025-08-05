@@ -22,9 +22,12 @@ from PIL import Image
 here = os.path.dirname(os.path.abspath(__file__))
 
 components = {}
-machine = SimpleNamespace(x=1000, y=600, z=500)
+machine = SimpleNamespace(x=2400, y=1400, z=1100)
+room = SimpleNamespace(x=8000, y=8000, z=4000)
+wall_width = 1
+
 aluminum_thickness = 4
-material_thickness = 2
+material_thickness = 2 
 
 ccrotation = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0])
 ccrotation1 = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
@@ -33,8 +36,8 @@ ccrotation2 = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
 # Add metallic material
 metallic_appearance = trimesh.visual.material.PBRMaterial(
     name="metal",
-    baseColorFactor=[0.8, 0.8, 0.85, 1.0],  # Slightly bluish silver
-    metallicFactor=1.0,
+    baseColorFactor=[0.8/2, 0.8/2, 0.85/2, 1.0],  # Slightly bluish silver
+    metallicFactor=0.5,
     roughnessFactor=0.1
 )
 metallic_texture = trimesh.visual.TextureVisuals(material=metallic_appearance)
@@ -45,6 +48,20 @@ glass_material = trimesh.visual.material.PBRMaterial(
     roughnessFactor=0.1,
     alphaMode="BLEND",
 )
+
+wall = box([room.y, room.x, wall_width])
+floor = translate(wall, [0,room.y/2-machine.y/2,0])
+floor.visual.material = glass_material
+rightwall = translate(rotate(box([room.z, room.y, wall_width]), [0,90,0]), [-room.x/2, room.y/2-machine.y/2, room.z/2])
+leftwall = translate(rotate(box([room.z, room.y, wall_width]), [0,270,0]), [room.x/2, room.y/2-machine.y/2, room.z/2])
+rearwall = translate(rotate(box([room.z, room.x, wall_width]), [0,270,90]), [0, -machine.y/2, room.z/2])
+
+#rotate(wall, [0,90,0])
+components["floor"] = floor
+components["rightwall"] = rightwall
+components["leftwall"] = leftwall
+components["rearwall"] = rearwall
+
 
 # enclosure = difference([main_box, cutout_box])
 # Create the left enclosure
@@ -143,24 +160,24 @@ def create_pull_handle(
 
 
 # Create and position the handle on door_front_left
-door_handle_left = create_pull_handle()
+door_handle_left = create_pull_handle(length = machine.z / 6, width = machine.z/30, thickness=machine.z/50)
 door_handle_cover = deepcopy(door_handle_left)
 rotate(door_handle_left, [0, 90, 0])  # Orient horizontally
-door_handle_right = deepcopy(door_handle_left)
+door_handle_right = deepcopy(door_handle_left) 
 translate(
     door_handle_left,
     [
         90,
         machine.y / 2 + aluminum_thickness / 2 + 10,
-        machine.z - 140,
+        machine.z - 180,
     ],
-)
+) 
 translate(
     door_handle_right,
     [
         -90,
         machine.y / 2 + aluminum_thickness / 2 + 10,
-        machine.z - 140,
+        machine.z - 180,
     ],
 )
 
@@ -168,8 +185,8 @@ translate(
     door_handle_cover,
     [
         0,
-        machine.y / 2 + aluminum_thickness / 2 + 10,
-        machine.z + 80,
+        machine.y / 2 * 1.05 + aluminum_thickness / 2 ,
+        machine.z * 1.12,
     ],
 )
 
@@ -193,9 +210,9 @@ components["laser_lens"] = cylinder(
 add_texture(components["laser_lens"], "red.jpg")
 
 # Side piece
-sp_total_height = 200
-sp_bend_point = 100
-sp_width = 60
+sp_total_height = machine.z / 4
+sp_bend_point = machine.z / 6
+sp_width = machine.x / 10
 
 # Define 2D profile as Shapely polygon
 points = [
@@ -237,7 +254,7 @@ components["front_extension"] = front_extension
 
 # Emergency Stop
 emergency_stop = cylinder(
-    radius=15,
+    radius=machine.x/70,
     height=40,
 )
 add_texture(emergency_stop, "red.jpg")
@@ -339,8 +356,8 @@ for i in range(8):
 
 # Cables
 cables = []
-exhaust_radius = 40
-exhaust = trimesh.creation.capsule(height=machine.y, radius=exhaust_radius)
+exhaust_radius = machine.y / 15
+exhaust = trimesh.creation.capsule(height=machine.z*0.9, radius=exhaust_radius)
 add_texture(exhaust, "cable.jpg")
 translate(exhaust, [machine.x / 2 + 10, 0, machine.y / 2])
 cables.append(exhaust)
@@ -352,6 +369,42 @@ cables.append(exhaust)
 #logo_mesh.apply_transform(ccrotation2)
 #logo_mesh.apply_translation([-50, machine.z / 2 + 1, machine.y / 2 - 30])
 #add_texture(logo_mesh, "logo.png")
+
+# Load and position crate model
+crate = rotate(center(trimesh.load(os.path.join(here, "Crate.glb"))), [90,0,180])
+# Scale to 1000 units tall (Z axis)
+box_height = 1200
+current_height = crate.bounds[1][2] - crate.bounds[0][2]
+scale_factor = box_height / current_height
+crate.apply_scale([scale_factor*2, scale_factor*2, scale_factor])
+# Position to left of laser cutter
+translate(crate, [room.x/2 + crate.bounds[0][1], room.y/2, box_height/2])
+components["crate"] = crate
+
+
+# Create a silicon wafer-style disk with a flat edge
+wafer_radius = 250  # 500 mm diameter
+wafer_thickness = 0.775  # Typical silicon wafer thickness in mm
+flat_width = 30  # Width of the flat cut, adjust as needed
+# Create full round wafer
+wafer_disk = cylinder(radius=wafer_radius, height=wafer_thickness, sections=128)
+# Create box to subtract for the flat
+flat_box = box([flat_width, wafer_radius * 2 + 10, wafer_thickness + 1])
+flat_box.apply_translation([wafer_radius - flat_width / 2, 0, 0])  # Position box on one edge
+# Subtract the flat
+wafer_with_flat = difference([wafer_disk, flat_box])
+# Set metallic/silicon-like material (dark gray, slightly shiny)
+silicon_material = trimesh.visual.material.PBRMaterial(
+    baseColorFactor=[0.2, 0.2, 0.2, 1.0],
+    metallicFactor=0.1,
+    roughnessFactor=0.2,
+)
+wafer_with_flat.visual.material = silicon_material
+# Position the wafer somewhere visible in the scene
+translate(wafer_with_flat, [room.x/2-box_height/2, room.y/2, box_height])
+# Add to components
+components["wafer"] = wafer_with_flat
+
 
 # Combine honeycomb_list, buttons, vents, and cables
 components["honeycomb_mesh"] = generateHoneycomb(machine)
