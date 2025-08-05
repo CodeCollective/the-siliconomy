@@ -2,19 +2,17 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>A-Frame VR Scene with Movable Models</title>
+    <title>A-Frame VR Scene with Handy Controls</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- A-Frame (latest) -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
 
+    <!-- Handy Controls -->
+    <script src="https://cdn.jsdelivr.net/npm/handy-work/build/handy-controls.min.js"></script>
+
     <!-- Physics system (BufferGeometry compatible) -->
     <script src="https://cdn.jsdelivr.net/npm/@c-frame/physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-
-    <!-- Super Hands for grabbing interaction -->
-    <script src="https://unpkg.com/super-hands/dist/super-hands.min.js"></script>
-
-    <!-- Simple movement component (custom) -->
 
     <style>
       body {
@@ -136,50 +134,52 @@
           ></a-cursor>
         </a-camera>
 
-        <!-- Right Hand Controller with fixed raycaster -->
-        <a-entity 
-          id="rightHand"
-          hand-controls="hand: right; handModelStyle: lowPoly; color: #ffcc99"
-          laser-controls="hand: right"
-          raycaster="objects: .clickable; far: 10; direction: 0 0 -1"
-          sphere-collider="objects: .clickable"
-          super-hands="colliderEvent: raycaster-intersection;
-                       colliderEventProperty: els;
-                       colliderEndEvent: raycaster-intersection-cleared;
-                       colliderEndEventProperty: clearedEls"
-        >
-          <!-- Visual ray indicator -->
-          <a-entity
-            geometry="primitive: cylinder; radius: 0.002; height: 5"
-            material="color: #ff0000; opacity: 0.3"
-            position="0 0 -2.5"
-            rotation="90 0 0"
-            visible="false"
-            id="right-ray"
-          ></a-entity>
-        </a-entity>
-        
-        <!-- Left Hand Controller with fixed raycaster -->
-        <a-entity 
-          id="leftHand"
-          hand-controls="hand: left; handModelStyle: lowPoly; color: #ffcc99"
-          laser-controls="hand: left"
-          raycaster="objects: .clickable; far: 10; direction: 0 0 -1"
-          sphere-collider="objects: .clickable"
-          super-hands="colliderEvent: raycaster-intersection;
-                       colliderEventProperty: els;
-                       colliderEndEvent: raycaster-intersection-cleared;
-                       colliderEndEventProperty: clearedEls"
-        >
-          <!-- Visual ray indicator -->
-          <a-entity
-            geometry="primitive: cylinder; radius: 0.002; height: 5"
-            material="color: #0000ff; opacity: 0.3"
-            position="0 0 -2.5"
-            rotation="90 0 0"
-            visible="false"
-            id="left-ray"
-          ></a-entity>
+        <!-- Handy Controls implementation -->
+        <a-entity handy-controls="right:#right-gltf;materialOverride:right;" material="color:gold;metalness:1;roughness:0;">
+
+          <!-- Screen space inputs like mobile AR -->
+          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:blue" data-none="screen-0"></a-torus>
+          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:green" data-none="screen-1"></a-torus>
+          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:red" data-none="screen-2"></a-torus>
+          
+          <!-- Objects attached to tracked hand joints -->
+          <a-gltf-model src="#watch-gltf" data-left="wrist" position="-1000 0 0">
+            <a-sphere radius="0.02" position="0 0.02 0" sphere-collider="radius:0.02;objects:[data-right$=-tip];" exit-on="hitend" visible="false"></a-sphere>
+          </a-gltf-model>
+          <a-entity data-left="ring-finger-phalanx-proximal">
+            <a-torus position="0 0 -0.03" radius="0.008" radius-tubular="0.001" scale="1 1 1.5" material="color:gold;metalness:1;roughness:0;"></a-torus>
+          </a-entity>
+          
+          <a-entity data-right="index-finger-tip" mixin="blink" blink-controls="rotateOnTeleport:false;startEvents:pose_point_fuseShort;endEvents:pose_point_fuseLong;"></a-entity>
+          <a-entity data-left="index-finger-tip"  mixin="blink" blink-controls="rotateOnTeleport:false;startEvents:pose_point_fuseShort;endEvents:pose_point_fuseLong;"></a-entity>
+          
+          <!-- Ray and Grip are Available on Hands or Tracked Inputs -->
+          <a-entity data-right="ray" mixin="blink" blink-controls>
+            <a-entity position="0 0 -0.22" class="pose-label" text="value: Hello World; align: center;"></a-entity>
+          </a-entity>
+          <a-entity data-left="ray" mixin="blink" blink-controls>
+            <a-entity position="0 0 -0.22" class="pose-label" text="value: Hello World; align: center;"></a-entity>
+          </a-entity>
+
+          <!-- Magnetic anchors -->
+          <a-entity id="right-magnet" data-right="grip" data-magnet=".magnet-right:not([data-no-magnet]),.magnet:not([data-no-magnet])" grab-magnet-target="startEvents:squeezestart,pose_fist;stopEvents:pose_flat_fuseShort,squeezeend;"></a-entity>
+          <a-entity id="left-magnet" data-left="grip"  data-magnet=".magnet-left:not([data-no-magnet]),.magnet:not([data-no-magnet])"  grab-magnet-target="startEvents:squeezestart,pose_fist;stopEvents:pose_flat_fuseShort,squeezeend;"></a-entity>
+
+          <!-- Markers to show real hand locations -->
+          <a-sphere id="right-no-magnet" data-right="grip" data-no-magnet radius="0.01" color="red"></a-sphere>
+          <a-sphere id="left-no-magnet" data-left="grip" data-no-magnet radius="0.01" color="red"></a-sphere>
+          
+          <!-- Invisible objects at finger tips for physics -->
+          <a-sphere data-right="index-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-right="middle-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-right="ring-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-right="pinky-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-right="thumb-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-left="index-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-left="middle-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-left="ring-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-left="pinky-finger-tip" radius="0.01" visible="false"></a-sphere>
+          <a-sphere data-left="thumb-tip" radius="0.01" visible="false"></a-sphere>
         </a-entity>
       </a-entity>
 
@@ -316,16 +316,10 @@
         // Handle VR enter/exit events
         document.querySelector('a-scene').addEventListener('enter-vr', () => {
           console.log('Entered VR mode');
-          // Show ray indicators in VR
-          document.getElementById('right-ray').setAttribute('visible', 'true');
-          document.getElementById('left-ray').setAttribute('visible', 'true');
         });
         
         document.querySelector('a-scene').addEventListener('exit-vr', () => {
           console.log('Exited VR mode');
-          // Hide ray indicators outside VR
-          document.getElementById('right-ray').setAttribute('visible', 'false');
-          document.getElementById('left-ray').setAttribute('visible', 'false');
         });
 
         // Custom component to handle simple movement
@@ -390,75 +384,3 @@
             }
           }
         });
-
-        // Custom component to handle VR thumbstick movement
-        AFRAME.registerComponent('thumbstick-movement', {
-          init: function () {
-            this.velocity = new THREE.Vector3();
-            this.speed = 3;
-            
-            // Listen for thumbstick events
-            this.el.addEventListener('thumbstickmoved', (evt) => {
-              const axes = evt.detail;
-              if (Math.abs(axes.x) > 0.1 || Math.abs(axes.y) > 0.1) {
-                this.moveWithThumbstick(axes.x, axes.y);
-              }
-            });
-          },
-          
-          moveWithThumbstick: function(x, y) {
-            const cameraRig = document.getElementById('cameraRig');
-            const camera = cameraRig.querySelector('a-camera');
-            
-            if (!camera) return;
-            
-            const cameraEl = camera.object3D;
-            const direction = new THREE.Vector3();
-            cameraEl.getWorldDirection(direction);
-            
-            // Calculate movement vector
-            const moveVector = new THREE.Vector3();
-            moveVector.add(direction.multiplyScalar(-y * this.speed * 0.016)); // Forward/backward
-            
-            const right = new THREE.Vector3();
-            right.crossVectors(direction, cameraEl.up).normalize();
-            moveVector.add(right.multiplyScalar(x * this.speed * 0.016)); // Left/right
-            
-            // Apply movement
-            const currentPosition = cameraRig.getAttribute('position');
-            cameraRig.setAttribute('position', {
-              x: currentPosition.x + moveVector.x,
-              y: currentPosition.y,
-              z: currentPosition.z + moveVector.z
-            });
-          }
-        });
-
-        // Custom component to handle teleportation
-        AFRAME.registerComponent('teleport-controls', {
-          init: function () {
-            this.el.addEventListener('thumbstickdown', (evt) => {
-              // Handle teleportation logic here
-              console.log('Thumbstick pressed for teleportation');
-            });
-          }
-        });
-
-        // Add movement controls to controllers after scene loads
-        document.querySelector('a-scene').addEventListener('loaded', () => {
-          const rightHand = document.getElementById('rightHand');
-          const leftHand = document.getElementById('leftHand');
-          
-          if (rightHand) {
-            rightHand.setAttribute('teleport-controls', '');
-            rightHand.setAttribute('thumbstick-movement', '');
-          }
-          if (leftHand) {
-            leftHand.setAttribute('teleport-controls', '');
-            leftHand.setAttribute('thumbstick-movement', '');
-          }
-        });
-      </script>
-    </a-scene>
-  </body>
-</html>

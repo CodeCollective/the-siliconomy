@@ -61,8 +61,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         // Create model selection buttons
         loading.textContent = "Creating model menu...";
         const modelList = document.getElementById('modelList');
+        const primitiveList = document.getElementById('primitiveList');
         const toggleMenu = document.getElementById('toggleMenu');
         let currentModel = null;
+        let currentPrimitives = [];
 
         // Load saved model if exists
         const savedModel = localStorage.getItem('selectedModel');
@@ -112,6 +114,107 @@ document.addEventListener('DOMContentLoaded', async function () {
                     currentModel.name = `model_${index}`;
                     currentModel.position = BABYLON.Vector3.Zero();
 
+                    // Clear previous primitives
+                    primitiveList.innerHTML = '';
+                    currentPrimitives = [];
+
+                    // Add show/hide all buttons
+                    const controlsDiv = document.createElement('div');
+                    controlsDiv.className = 'primitive-controls';
+                    
+                    const checkboxes = [];
+                    
+                    const showAllBtn = document.createElement('button');
+                    showAllBtn.textContent = 'Show All';
+                    showAllBtn.className = 'primitive-control-btn';
+                    showAllBtn.addEventListener('click', () => {
+                        meshes.forEach((m, idx) => {
+                            if (idx > 0) {
+                                m.isVisible = true;
+                                checkboxes[idx-1].checked = true;
+                            }
+                        });
+                    });
+                    
+                    const hideAllBtn = document.createElement('button');
+                    hideAllBtn.textContent = 'Hide All';
+                    hideAllBtn.className = 'primitive-control-btn';
+                    hideAllBtn.addEventListener('click', () => {
+                        meshes.forEach((m, idx) => {
+                            if (idx > 0) {
+                                m.isVisible = false;
+                                checkboxes[idx-1].checked = false;
+                            }
+                        });
+                    });
+                    
+                    controlsDiv.appendChild(showAllBtn);
+                    controlsDiv.appendChild(hideAllBtn);
+                    primitiveList.appendChild(controlsDiv);
+
+                    // Collect and sort primitives
+                    const primitives = [];
+                    meshes.forEach((mesh, i) => {
+                        if (i === 0) return; // Skip root mesh
+                        primitives.push({
+                            mesh,
+                            index: i,
+                            name: mesh.name || `Primitive ${i}`
+                        });
+                    });
+                    
+                    // Sort alphabetically by name
+                    primitives.sort((a, b) => a.name.localeCompare(b.name));
+                    
+                    // Restore primitive visibility by name
+                    const pendingPrimitiveStates = localStorage.getItem('pendingPrimitiveStates');
+                    let primitiveStates = {};
+                    if (pendingPrimitiveStates) {
+                        try {
+                            primitiveStates = JSON.parse(pendingPrimitiveStates);
+                            localStorage.removeItem('pendingPrimitiveStates');
+                        } catch (e) {
+                            console.error('Failed to parse pending primitive states:', e);
+                        }
+                    }
+
+                    // Add sorted primitives to list
+                    primitives.forEach(({mesh, index, name}) => {
+                        const primitiveItem = document.createElement('div');
+                        primitiveItem.className = 'primitive-item';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        // Match by name, default to true if not found
+                        const isVisible = name in primitiveStates ? primitiveStates[name] : true;
+                        checkbox.checked = isVisible;
+                        mesh.isVisible = isVisible;
+                        checkbox.className = 'primitive-checkbox';
+                        checkboxes.push(checkbox);
+                        
+                        const label = document.createElement('span');
+                        label.textContent = name;
+                        label.className = 'primitive-label';
+                        
+                        checkbox.addEventListener('change', () => {
+                            mesh.isVisible = checkbox.checked;
+                            mesh.renderOutline = checkbox.checked;
+                        });
+                        
+                        label.addEventListener('click', () => {
+                            // Highlight selected primitive
+                            meshes.forEach(m => m.renderOutline = false);
+                            mesh.renderOutline = true;
+                            mesh.outlineWidth = 0.1;
+                            mesh.outlineColor = new BABYLON.Color3(1, 0.5, 0);
+                        });
+                        
+                        primitiveItem.appendChild(checkbox);
+                        primitiveItem.appendChild(label);
+                        primitiveList.appendChild(primitiveItem);
+                        currentPrimitives.push(mesh);
+                    });
+
                     // Fit camera to model
                     const bounds = scene.getWorldExtends();
                     const diagonal = bounds.max.subtract(bounds.min).length();
@@ -148,7 +251,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                             
                             if (lastModified && currentModified !== lastModified) {
                                 console.log('Model file changed, reloading...');
-                                // Save current camera state before reloading
+                                // Save current camera state and primitive visibility before reloading
                                 const cameraState = {
                                     alpha: camera.alpha,
                                     beta: camera.beta,
@@ -159,7 +262,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                                         z: camera.target.z
                                     }
                                 };
+                                const primitiveStates = {};
+                                meshes.forEach((m, idx) => {
+                                    if (idx > 0) {
+                                        primitiveStates[m.name || `Primitive ${idx}`] = m.isVisible;
+                                    }
+                                });
                                 localStorage.setItem('pendingCameraState', JSON.stringify(cameraState));
+                                localStorage.setItem('pendingPrimitiveStates', JSON.stringify(primitiveStates));
                                 btn.click(); // Trigger reload
                             }
                             lastModified = currentModified;
