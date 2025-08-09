@@ -41,7 +41,7 @@ canvas {
   touch-action: none;
 }
 
-/* VR Button Styling */
+/* VR Button Styling 
 .a-enter-vr-button {
   position: fixed !important;
   bottom: 20px !important;
@@ -67,7 +67,7 @@ canvas {
 
 .a-enter-vr-button:active {
   transform: scale(0.95) !important;
-}
+}*/
 
 /* Loading indicator */
 .loading-indicator {

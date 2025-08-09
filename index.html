@@ -2,161 +2,108 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>A-Frame VR Scene with Handy Controls</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-Frame VR Scene</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- A-Frame (latest) -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <!-- Controller support -->
+    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.js"></script>
 
-    <!-- Handy Controls -->
-    <script src="https://cdn.jsdelivr.net/npm/handy-work/build/handy-controls.min.js"></script>
-
-    <!-- Physics system (BufferGeometry compatible) -->
+    <!-- Physics system -->
     <script src="https://cdn.jsdelivr.net/npm/@c-frame/physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
 
+    <link rel="stylesheet" href="styles.css">  
   </head>
 
   <body>
     <div class="loading-indicator" id="loadingIndicator">Loading models...</div>
-    
+
     <div class="instructions">
-      <strong>Controls:</strong><br>
-      • Desktop: WASD to move, Mouse to look, Click and drag to move models<br>
-      • VR: Use thumbstick/trackpad to move, grab objects with trigger<br>
+      <strong>Controls:</strong><br />
+      • Desktop: WASD to move, Mouse to look, Click and drag to move models<br />
+      • VR: Use thumbstick/trackpad to move, grab objects with trigger<br />
       • Look around by moving your head/mouse
     </div>
 
-    <a-scene 
-      physics="gravity: -9.8" 
-      embedded 
-      style="height: 100vh; width: 100vw;"
+    <a-scene
+      physics="gravity: -9.800"
+      embedded
+      style="height: 100vh; width: 100vw"
       vr-mode-ui="enabled: true"
       background="color: #87CEEB"
+      renderer="antialias: true"
+      cursor="rayOrigin: mouse"
     >
-
-      <!-- Asset Management -->
-      <a-assets id="model-assets">
-        <!-- Preload some basic materials -->
-        <a-mixin id="grabbable-object" 
-          class="clickable"
-          grabbable=""
-          dynamic-body="mass: 1"
-          geometry="primitive: box; width: 1; height: 1; depth: 1"
-          material="color: #4CC3D9"
-        ></a-mixin>
-        
-        <a-mixin id="blink" 
-          blink-controls="rotateOnTeleport:false"
-        ></a-mixin>
-      </a-assets>
-
-      <!-- Camera Rig with simple movement -->
-      <a-entity 
-        id="cameraRig" 
-        position="0 1.6 2"
-        simple-movement
-      >
-        <a-camera 
-          look-controls="enabled: true"
-          wasd-controls="enabled: true"
-          cursor="rayOrigin: mouse"
-        >
-          <!-- Cursor for desktop interaction -->
-          <a-cursor 
-            raycaster="objects: .clickable"
-            geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
-            material="color: white; shader: flat"
-            position="0 0 -1"
-          ></a-cursor>
+      <!-- Camera at ~1.600m eye height -->
+      <a-entity position="0 1.600 4.000" simple-movement>
+        <a-camera>
+          <a-cursor raycaster="objects: .clickable"></a-cursor>
         </a-camera>
+        
+        <!-- Refresh Button (positioned 500mm in front) -->
 
-        <!-- Handy Controls implementation -->
-        <a-entity handy-controls="right:#right-gltf;materialOverride:right;" material="color:gold;metalness:1;roughness:0;">
-
-          <!-- Screen space inputs like mobile AR -->
-          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:blue" data-none="screen-0"></a-torus>
-          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:green" data-none="screen-1"></a-torus>
-          <a-torus radius="0.008" radius-tubular="0.001" material="shader:flat;color:red" data-none="screen-2"></a-torus>
-          
-          <!-- Objects attached to tracked hand joints -->
-          <a-gltf-model src="#watch-gltf" data-left="wrist" position="-1000 0 0">
-            <a-sphere radius="0.02" position="0 0.02 0" sphere-collider="radius:0.02;objects:[data-right$=-tip];" exit-on="hitend" visible="false"></a-sphere>
-          </a-gltf-model>
-          <a-entity data-left="ring-finger-phalanx-proximal">
-            <a-torus position="0 0 -0.03" radius="0.008" radius-tubular="0.001" scale="1 1 1.5" material="color:gold;metalness:1;roughness:0;"></a-torus>
-          </a-entity>
-          
-          <a-entity data-right="index-finger-tip" mixin="blink" blink-controls="rotateOnTeleport:false;startEvents:pose_point_fuseShort;endEvents:pose_point_fuseLong;"></a-entity>
-          <a-entity data-left="index-finger-tip"  mixin="blink" blink-controls="rotateOnTeleport:false;startEvents:pose_point_fuseShort;endEvents:pose_point_fuseLong;"></a-entity>
-          
-          <!-- Ray and Grip are Available on Hands or Tracked Inputs -->
-          <a-entity data-right="ray" mixin="blink" blink-controls>
-            <a-entity position="0 0 -0.22" class="pose-label" text="value: Hello World; align: center;"></a-entity>
-          </a-entity>
-          <a-entity data-left="ray" mixin="blink" blink-controls>
-            <a-entity position="0 0 -0.22" class="pose-label" text="value: Hello World; align: center;"></a-entity>
-          </a-entity>
-
-          <!-- Magnetic anchors -->
-          <a-entity id="right-magnet" data-right="grip" data-magnet=".magnet-right:not([data-no-magnet]),.magnet:not([data-no-magnet])" grab-magnet-target="startEvents:squeezestart,pose_fist;stopEvents:pose_flat_fuseShort,squeezeend;"></a-entity>
-          <a-entity id="left-magnet" data-left="grip"  data-magnet=".magnet-left:not([data-no-magnet]),.magnet:not([data-no-magnet])"  grab-magnet-target="startEvents:squeezestart,pose_fist;stopEvents:pose_flat_fuseShort,squeezeend;"></a-entity>
-
-          <!-- Markers to show real hand locations -->
-          <a-sphere id="right-no-magnet" data-right="grip" data-no-magnet radius="0.01" color="red"></a-sphere>
-          <a-sphere id="left-no-magnet" data-left="grip" data-no-magnet radius="0.01" color="red"></a-sphere>
-          
-          <!-- Invisible objects at finger tips for physics -->
-          <a-sphere data-right="index-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-right="middle-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-right="ring-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-right="pinky-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-right="thumb-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-left="index-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-left="middle-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-left="ring-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-left="pinky-finger-tip" radius="0.01" visible="false"></a-sphere>
-          <a-sphere data-left="thumb-tip" radius="0.01" visible="false"></a-sphere>
+        <a-entity 
+          id="refresh-button"
+          geometry="primitive: box; width: .200; height: .050; depth: .050"
+          material="color: #FF6B6B"
+          position="0 0 -0.500"
+          class="clickable"
+          clickable
+        >
+          <a-entity
+            text="value: Refresh; align: center; width: 0.500; color: black"
+            position="0 0 0.026" 
+          ></a-entity>
         </a-entity>
+
+
       </a-entity>
 
       <!-- Model container -->
       <a-entity id="model-container"></a-entity>
 
-      <!-- Fallback objects in case models don't load -->
-      <a-entity id="fallback-objects" visible="false">
-        <a-box mixin="grabbable-object" position="-2 1 -3" color="#FF6B6B"></a-box>
-        <a-sphere class="clickable grabbable" dynamic-body="mass: 1" position="0 1 -3" radius="0.5" color="#4ECDC4"></a-sphere>
-        <a-cylinder class="clickable grabbable" dynamic-body="mass: 1" position="2 1 -3" radius="0.5" height="1" color="#45B7D1"></a-cylinder>
+      <!-- Controllers with visual representation -->
+      <!-- Right Controller -->
+      <a-entity hand-controls="hand: right"
+                vive-controls="hand: right"
+                raycaster="far: 20.000; objects: .clickable" 
+                position="0.200 1.500 -0.300">
       </a-entity>
 
-      <!-- Navigation mesh (invisible collision for movement) -->
-      <a-plane 
-        rotation="-90 0 0" 
-        width="50" 
-        height="50" 
-        color="#7BC8A4" 
-        visible="false"
-        position="0 0.01 0"
-      ></a-plane>
+      <!-- Left Controller -->
+      <a-entity hand-controls="hand: left"
+                vive-controls="hand: left"
+                raycaster="far: 20; objects: .clickable"
+                position="-0.200 1.500 -0.300">
+      </a-entity>
 
-      <!-- Boundary walls (invisible) -->
-      <a-box position="0 2 -25" width="50" height="4" depth="1" visible="false" static-body></a-box>
-      <a-box position="0 2 25" width="50" height="4" depth="1" visible="false" static-body></a-box>
-      <a-box position="-25 2 0" width="1" height="4" depth="50" visible="false" static-body></a-box>
-      <a-box position="25 2 0" width="1" height="4" depth="50" visible="false" static-body></a-box>
-
-      <!-- Improved lighting -->
-      <a-light type="directional" intensity="1.5" position="1000 3000 1000" shadow="cast: true"></a-light>
-      <a-light type="directional" intensity="1.5" position="-1000 3000 1000" shadow="cast: true"></a-light>
+      <!-- Lighting  -->
+      <a-light
+        type="directional"
+        intensity="1.5"
+        position="1000 3000 1000"
+        shadow="cast: true"
+      ></a-light>
+      <a-light
+        type="directional"
+        intensity="1.5"
+        position="-1000 3000 1000"
+        shadow="cast: true"
+      ></a-light>
       <a-light type="ambient" intensity="1.4" color="#FFFFFF"></a-light>
-      <a-light type="point" intensity="0.3" position="0 3 0" color="#ffffff"></a-light>
+      <a-light
+        type="point"
+        intensity="0.3"
+        position="0 3 0"
+        color="#ffffff"
+      ></a-light>
 
       <!-- Sky -->
       <a-sky color="#87CEEB"></a-sky>
-    </a-scene>
 
-    <!-- Model loading script with error handling -->
-    <script src = "aframe_viewer.js">
-    </script>
+      <!-- Controller visibility management -->
+      <script src = "./aframe_viewer.js"></script>
   </body>
 </html>

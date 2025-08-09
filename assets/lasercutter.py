@@ -407,9 +407,9 @@ components["wafer"] = wafer_with_flat
 
 
 # Combine honeycomb_list, buttons, vents, and cables
-components["honeycomb_mesh"] = generateHoneycomb(machine)
-translate(components["honeycomb_mesh"], [0, 0, machine.z + aluminum_thickness])
-add_texture(components["honeycomb_mesh"], "aluminum.jpg")
+#components["honeycomb_mesh"] = generateHoneycomb(machine)
+#translate(components["honeycomb_mesh"], [0, 0, machine.z + aluminum_thickness])
+#add_texture(components["honeycomb_mesh"], "aluminum.jpg")
 
 components["vents_mesh"] = trimesh.util.concatenate(vents)
 components["cables_mesh"] = trimesh.util.concatenate(cables)
