@@ -167,26 +167,91 @@ def create_text_mesh_custom_font(text, font_path=os.path.join(here, "nofile"), f
 
     return mesh
 
+import numpy as np
 
-def generate_uv_coordinates(mesh):
-    """Generate simple UV coordinates using bounding box projection"""
-    vertices = mesh.vertices
-    bounds = mesh.bounds
-    
-    # Get the size of the bounding box
-    size = bounds[1] - bounds[0]
-    
-    # Project to UV coordinates (0-1 range)
-    u = (vertices[:, 0] - bounds[0, 0]) / max(size[0], 1e-8)
-    v = (vertices[:, 1] - bounds[0, 1]) / max(size[1], 1e-8)
-    
-    # Stack to create UV array
-    uv = np.column_stack([u, v])
-    
-    # Clamp to [0, 1] range
-    uv = np.clip(uv, 0, 1)
-    
-    return uv
+def generate_uv_coordinates(mesh, normals=None):
+    """
+    UVs via cube projection chosen by the dominant component of the *vertex normal*.
+    Expects mesh with .vertices, .faces, .bounds (trimesh-like).
+    Optionally pass (N,3) vertex normals in `normals`.
+    Returns (N,2) float32 UVs in [0,1].
+    """
+    v = np.asarray(mesh.vertices, dtype=np.float64)
+    f = np.asarray(mesh.faces, dtype=np.int64)
+    b = np.asarray(mesh.bounds, dtype=np.float64)
+
+    bb_min = b[0]
+    bb_max = b[1]
+    size   = np.maximum(bb_max - bb_min, 1e-8)
+
+    # Compute vertex normals if not provided
+    if normals is None:
+        tri = v[f]
+        e1 = tri[:, 1] - tri[:, 0]
+        e2 = tri[:, 2] - tri[:, 0]
+        fn = np.cross(e1, e2)
+        fn_len = np.linalg.norm(fn, axis=1, keepdims=True)
+        fn = np.divide(fn, np.maximum(fn_len, 1e-20))
+
+        vn = np.zeros_like(v)
+        np.add.at(vn, f[:, 0], fn)
+        np.add.at(vn, f[:, 1], fn)
+        np.add.at(vn, f[:, 2], fn)
+        vn_len = np.linalg.norm(vn, axis=1, keepdims=True)
+        vn = np.divide(vn, np.maximum(vn_len, 1e-20))
+    else:
+        vn = np.asarray(normals, dtype=np.float64)
+        vn_len = np.linalg.norm(vn, axis=1, keepdims=True)
+        vn = np.divide(vn, np.maximum(vn_len, 1e-20))
+
+    # Dominant-axis from |normal|
+    avn = np.abs(vn)
+    dom = np.argmax(avn, axis=1)  # 0=X, 1=Y, 2=Z
+
+    uv = np.zeros((v.shape[0], 2), dtype=np.float64)
+
+    def norm_axis(vals, a_min, a_size):
+        return (vals - a_min) / np.maximum(a_size, 1e-8)
+
+    # X-dominant -> project to YZ
+    mx = (dom == 0)
+    if np.any(mx):
+        y = v[mx, 1]; z = v[mx, 2]
+        u = norm_axis(y, bb_min[1], size[1])
+        w = norm_axis(z, bb_min[2], size[2])
+        flip = vn[mx, 0] < 0
+        if np.any(flip):
+            u[flip] = 1.0 - u[flip]   # <-- fix
+        uv[mx, 0] = u
+        uv[mx, 1] = w
+
+    # Y-dominant -> project to XZ
+    my = (dom == 1)
+    if np.any(my):
+        x = v[my, 0]; z = v[my, 2]
+        u = norm_axis(x, bb_min[0], size[0])
+        w = norm_axis(z, bb_min[2], size[2])
+        flip = vn[my, 1] < 0
+        if np.any(flip):
+            u[flip] = 1.0 - u[flip]   # <-- fix
+        uv[my, 0] = u
+        uv[my, 1] = w
+
+    # Z-dominant -> project to XY
+    mz = (dom == 2)
+    if np.any(mz):
+        x = v[mz, 0]; y = v[mz, 1]
+        u = norm_axis(x, bb_min[0], size[0])
+        w = norm_axis(y, bb_min[1], size[1])
+        flip = vn[mz, 2] < 0
+        if np.any(flip):
+            u[flip] = 1.0 - u[flip]   # <-- fix
+        uv[mz, 0] = u
+        uv[mz, 1] = w
+
+    return np.clip(uv, 0.0, 1.0).astype(np.float32)
+
+
 
 
 def add_texture(mesh, texture_filename):

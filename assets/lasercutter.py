@@ -55,6 +55,9 @@ floor.visual.material = glass_material
 rightwall = translate(rotate(box([room.z, room.y, wall_width]), [0,90,0]), [-room.x/2, room.y/2-machine.y/2, room.z/2])
 leftwall = translate(rotate(box([room.z, room.y, wall_width]), [0,270,0]), [room.x/2, room.y/2-machine.y/2, room.z/2])
 rearwall = translate(rotate(box([room.z, room.x, wall_width]), [0,270,90]), [0, -machine.y/2, room.z/2])
+add_texture(rightwall, "brickwall.jpg")
+add_texture(leftwall, "brickwall.jpg")
+add_texture(rearwall, "brickwall.jpg")
 
 #rotate(wall, [0,90,0])
 components["floor"] = floor

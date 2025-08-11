@@ -1,5 +1,5 @@
 // main.ts
-import { WebGPURenderer } from 'three/webgpu';
+import { WebGLRenderer } from 'three';
 import {
   Scene,
   Color,
@@ -14,28 +14,15 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-function ensureWebGPU() {
-  if (typeof navigator === 'undefined' || !(navigator as any).gpu) {
-    throw new Error('WebGPU not available. Use a compatible browser/device and run over HTTPS.');
-  }
-  if (location.protocol !== 'https:') {
-    throw new Error('WebGPU requires a secure context. Serve this over HTTPS.');
-  }
-}
-
-async function initViewer(): Promise<void> {
-  ensureWebGPU();
-
+function initViewer(): void {
   const canvas = document.getElementById('webgpu-canvas') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('Canvas element #webgpu-canvas not found.');
 
-  // ✅ Use the dedicated WebGPU entry and pass the existing canvas
-  const renderer = new WebGPURenderer({
+  const renderer = new WebGLRenderer({
     canvas,
     antialias: false,
-    powerPreference: 'high-performance',
+    powerPreference: 'high-performance'
   });
-  await renderer.init();
 
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -103,12 +90,14 @@ loader.load(
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initViewer().catch((err) => {
+  try {
+    initViewer();
+  } catch (err) {
     console.error('Failed to initialize viewer:', err);
     const el = document.createElement('div');
     el.style.cssText =
       'position:fixed;top:0;left:0;right:0;padding:12px;background:#300;color:#fff;font:14px/1.4 system-ui;z-index:9999';
     el.textContent = String(err?.message ?? err);
     document.body.appendChild(el);
-  });
+  }
 });

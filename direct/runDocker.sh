@@ -3,6 +3,7 @@ docker run -it --rm \
   -v "$(pwd)":/app \
   -v /app/node_modules \
   -w /app \
+  --name siliconomy-direct \
   -e VITE_SSL_KEY=/certs/localhost-key.pem \
   -e VITE_SSL_CERT=/certs/localhost-cert.pem \
   -v "$(pwd)/certs":/certs:ro \
