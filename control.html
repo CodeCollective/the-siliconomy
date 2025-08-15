@@ -1,205 +1,343 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Babylon.js WebXR — Laser Cutter (XR Move)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111; color: #eaeaea; }
-    #renderCanvas { width: 100%; height: 100%; touch-action: none; display: block; }
-    .hud, .footer {
-      position: fixed; padding: 8px 10px; background: rgba(0,0,0,.55);
-      border: 1px solid rgba(255,255,255,.15); border-radius: 10px;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.3; backdrop-filter: blur(6px);
-    }
-    .hud { left: 12px; top: 12px; font-size: 13px; }
-    .footer { right: 12px; bottom: 12px; font-size: 12px; }
-    .pad { display: grid; grid-template-columns: auto auto; gap: 6px 12px; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
-    .meter { width: 96px; height: 96px; border-radius: 8px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15); position: relative; overflow: hidden; }
-    .dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #9ad1ff; transform: translate(-50%, -50%); left: 50%; top: 50%; }
-  </style>
-</head>
-<body>
-  <canvas id="renderCanvas"></canvas>
+  <head>
+    <meta charset="utf-8" />
+    <title>Babylon.js WebXR — Laser Cutter (XR Move)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+        color: #eaeaea;
+      }
+      #renderCanvas {
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        display: block;
+      }
+      .hud,
+      .footer {
+        position: fixed;
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 10px;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial, sans-serif;
+        line-height: 1.3;
+        backdrop-filter: blur(6px);
+      }
+      .hud {
+        left: 12px;
+        top: 12px;
+        font-size: 13px;
+      }
+      .footer {
+        right: 12px;
+        bottom: 12px;
+        font-size: 12px;
+      }
+      .pad {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 6px 12px;
+        margin-top: 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+          "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+      .meter {
+        width: 96px;
+        height: 96px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        position: relative;
+        overflow: hidden;
+      }
+      .dot {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #9ad1ff;
+        transform: translate(-50%, -50%);
+        left: 50%;
+        top: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
 
-  <div class="hud">
-    <div><strong>Babylon.js WebXR — Laser Cutter</strong></div>
-    <ul style="margin:6px 0 8px 18px;">
-      <li><strong>Left stick</strong>: Snap turn (±30°)</li>
-      <li><strong>Right stick</strong>: Smooth move (XZ translate)</li>
-    </ul>
-    <div class="pad">
-      <div><strong>Left stick</strong></div><div id="leftVals">x=0.00, y=0.00</div>
-      <div class="meter"><div id="leftDot" class="dot"></div></div>
-      <div><strong>Right stick</strong></div><div id="rightVals">x=0.00, y=0.00</div>
-      <div class="meter"><div id="rightDot" class="dot"></div></div>
+    <div class="hud">
+      <div><strong>Babylon.js WebXR — Laser Cutter</strong></div>
+      <ul style="margin: 6px 0 8px 18px">
+        <li><strong>Left stick</strong>: Snap turn (±30°)</li>
+        <li><strong>Right stick</strong>: Smooth move (XZ translate)</li>
+      </ul>
+      <div class="pad">
+        <div><strong>Left stick</strong></div>
+        <div id="leftVals">x=0.00, y=0.00</div>
+        <div class="meter"><div id="leftDot" class="dot"></div></div>
+        <div><strong>Right stick</strong></div>
+        <div id="rightVals">x=0.00, y=0.00</div>
+        <div class="meter"><div id="rightDot" class="dot"></div></div>
+      </div>
     </div>
-  </div>
 
-  <div class="footer">
-    Tip: WebXR requires HTTPS and a compatible headset (Quest works). Desktop orbit camera works without XR.
-  </div>
+    <div class="footer">
+      Tip: WebXR requires HTTPS and a compatible headset (Quest works). Desktop
+      orbit camera works without XR.
+    </div>
 
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
-  <script>
-  (async function () {
-    const canvas = document.getElementById("renderCanvas");
+    <script>
+      (async function () {
+        const canvas = document.getElementById("renderCanvas");
 
-    // Engine (WebGL2, fall back to WebGL1)
-    let engine;
-    try {
-      engine = new BABYLON.Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: false });
-    } catch {
-      engine = new BABYLON.Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: true });
-    }
-
-    // Scene
-    const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.02, 0.02, 0.025, 1.0);
-
-    // Non-XR camera
-    const camera = new BABYLON.ArcRotateCamera("camera",
-      Math.PI / 2.2, Math.PI / 2.6, 8, new BABYLON.Vector3(0, 1.2, 0), scene);
-    camera.attachControl(canvas, true);
-    camera.lowerBetaLimit = 0.1;
-    camera.upperBetaLimit = Math.PI / 2.0;
-    camera.wheelDeltaPercentage = 0.01;
-
-    // Lights
-    const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
-    hemi.intensity = 0.9;
-    const dir = new BABYLON.DirectionalLight("dir", new BABYLON.Vector3(-0.25, -1, 0.2), scene);
-    dir.intensity = 0.6;
-    dir.position = new BABYLON.Vector3(5, 10, -5);
-
-    // Ground & environment
-    const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 20, height: 20 }, scene);
-    const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
-    groundMat.diffuseColor = new BABYLON.Color3(0.2, 0.22, 0.24);
-    groundMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
-    ground.material = groundMat;
-    scene.createDefaultEnvironment({ createSkybox: true, skyboxSize: 100, enableGroundShadow: true, groundYBias: 0.001 });
-
-    // === Load ONLY the laser cutter GLB, scaled down 1000x ===
-    const root = new BABYLON.TransformNode("laser_root", scene);
-    try {
-      const result = await BABYLON.SceneLoader.ImportMeshAsync("", "/assets/", "laser_cutter.glb", scene);
-      result.meshes.forEach(m => { if (m.parent == null) m.parent = root; });
-      root.scaling.set(0.001, 0.001, 0.001); // 1/1000 scale
-      // Optional: raise slightly if model’s origin is below ground
-      root.position.y = 0.0;
-    } catch (e) {
-      console.error("Failed to load /assets/laser_cutter.glb:", e);
-    }
-
-    // HUD
-    const leftVals = document.getElementById('leftVals');
-    const rightVals = document.getElementById('rightVals');
-    const leftDot = document.getElementById('leftDot');
-    const rightDot = document.getElementById('rightDot');
-    function updateDot(dotEl, x, y) {
-      const half = 48, range = 40;
-      dotEl.style.left = (half + x * range) + 'px';
-      dotEl.style.top  = (half + y * range) + 'px';
-    }
-
-    // Render loop
-    engine.runRenderLoop(() => { scene.render(); });
-    window.addEventListener("resize", () => engine.resize());
-
-    // XR setup
-    try {
-      const xr = await scene.createDefaultXRExperienceAsync({ floorMeshes: [ground] });
-
-      // Rig that we rotate (snap) and translate (smooth) in XR
-      const rig = new BABYLON.TransformNode("rig", scene);
-
-      xr.baseExperience.onStateChangedObservable.add((state) => {
-        if (state === BABYLON.WebXRState.IN_XR) {
-          xr.baseExperience.camera.parent = rig;
-        } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
-          if (xr.baseExperience.camera.parent === rig) xr.baseExperience.camera.parent = null;
+        // Engine (WebGL2, fall back to WebGL1)
+        let engine;
+        try {
+          engine = new BABYLON.Engine(canvas, false, {
+            preserveDrawingBuffer: true,
+            stencil: true,
+            disableWebGL2Support: false,
+          });
+        } catch {
+          engine = new BABYLON.Engine(canvas, false, {
+            preserveDrawingBuffer: true,
+            stencil: true,
+            disableWebGL2Support: true,
+          });
         }
-      });
 
-      const xrInput = xr.input;
+        // Scene
+        const scene = new BABYLON.Scene(engine);
+        scene.clearColor = new BABYLON.Color4(0.02, 0.02, 0.025, 1.0);
 
-      // Snap turn config (LEFT stick)
-      const SNAP_DEGREES = 30;
-      const SNAP_RADIANS = SNAP_DEGREES * Math.PI / 180;
-      const SNAP_THRESHOLD = 0.6;
-      const SNAP_DEADZONE = 0.2;
-      let leftReadyToSnap = true;
+        // Non-XR camera
+        const camera = new BABYLON.ArcRotateCamera(
+          "camera",
+          Math.PI / 2.2,
+          Math.PI / 2.6,
+          8,
+          new BABYLON.Vector3(0, 1.2, 0),
+          scene
+        );
+        camera.attachControl(canvas, true);
+        camera.lowerBetaLimit = 0.1;
+        camera.upperBetaLimit = Math.PI / 2.0;
+        camera.wheelDeltaPercentage = 0.01;
 
-      // Smooth translate (RIGHT stick) state
-      let moveX = 0, moveY = 0; // axes in [-1,1]
-      const MOVE_DEADZONE = 0.15;
-      const MOVE_SPEED = 2.5; // meters per second
+        // Lights
+        const hemi = new BABYLON.HemisphericLight(
+          "hemi",
+          new BABYLON.Vector3(0, 1, 0),
+          scene
+        );
+        hemi.intensity = 0.9;
+        const dir = new BABYLON.DirectionalLight(
+          "dir",
+          new BABYLON.Vector3(-0.25, -1, 0.2),
+          scene
+        );
+        dir.intensity = 0.6;
+        dir.position = new BABYLON.Vector3(5, 10, -5);
 
-      // Per-frame mover (world XZ, smooth)
-      scene.onBeforeRenderObservable.add(() => {
-        if (!xr.baseExperience || xr.baseExperience.state !== BABYLON.WebXRState.IN_XR) return;
-        const dt = engine.getDeltaTime() / 1000; // seconds
-        // Apply simple deadzone
-        const ax = Math.abs(moveX) > MOVE_DEADZONE ? moveX : 0;
-        const ay = Math.abs(moveY) > MOVE_DEADZONE ? moveY : 0;
-
-        if (ax !== 0 || ay !== 0) {
-          // World-space XZ translate: +X right, +Z forward
-          rig.position.x += ax * MOVE_SPEED * dt;
-          rig.position.z += ay * MOVE_SPEED * dt;
-        }
-      });
-
-      xrInput.onControllerAddedObservable.add((xrInputSource) => {
-        // Wire inputs when motion controller profile is ready
-        xrInputSource.onMotionControllerInitObservable.add((motionController) => {
-          const handedness = (xrInputSource.inputSource && xrInputSource.inputSource.handedness) || motionController.handedness || "unknown";
-
-          // LEFT: snap turn on X axis
-          const leftThumb = handedness === "left" && (motionController.getComponentOfType("thumbstick") || motionController.getComponentOfType("touchpad"));
-          if (leftThumb && leftThumb.isAxes()) {
-            leftThumb.onAxisValueChangedObservable.add((values) => {
-              const x = values.x || 0, y = values.y || 0;
-              leftVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(2)}`;
-              updateDot(leftDot, x, y);
-
-              if (leftReadyToSnap && x > SNAP_THRESHOLD) {
-                rig.rotation.y -= SNAP_RADIANS;
-                leftReadyToSnap = false;
-              } else if (leftReadyToSnap && x < -SNAP_THRESHOLD) {
-                rig.rotation.y += SNAP_RADIANS;
-                leftReadyToSnap = false;
-              }
-              if (Math.abs(x) < SNAP_DEADZONE) leftReadyToSnap = true;
-            });
-          }
-
-          // RIGHT: smooth translate on XZ (world space)
-          const rightThumb = handedness === "right" && (motionController.getComponentOfType("thumbstick") || motionController.getComponentOfType("touchpad"));
-          if (rightThumb && rightThumb.isAxes()) {
-            rightThumb.onAxisValueChangedObservable.add((values) => {
-              moveX = values.x || 0;
-              moveY = values.y || 0;
-              rightVals.textContent = `x=${moveX.toFixed(2)}, y=${moveY.toFixed(2)}`;
-              updateDot(rightDot, moveX, moveY);
-            });
-          }
+        // Ground & environment
+        const ground = BABYLON.MeshBuilder.CreateGround(
+          "ground",
+          { width: 20, height: 20 },
+          scene
+        );
+        const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+        groundMat.diffuseColor = new BABYLON.Color3(0.2, 0.22, 0.24);
+        groundMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+        ground.material = groundMat;
+        scene.createDefaultEnvironment({
+          createSkybox: true,
+          skyboxSize: 100,
+          enableGroundShadow: true,
+          groundYBias: 0.001,
         });
-      });
 
-      // Cleanup on controller removal
-      xr.input.onControllerRemovedObservable.add(() => {
-        moveX = 0; moveY = 0;
-      });
+        // === Load ONLY the laser cutter GLB, scaled down 1000x ===
+        const root = new BABYLON.TransformNode("laser_root", scene);
+        try {
+          const result = await BABYLON.SceneLoader.ImportMeshAsync(
+            "",
+            "/assets/",
+            "laser_cutter.glb",
+            scene
+          );
+          result.meshes.forEach((m) => {
+            if (m.parent == null) m.parent = root;
+          });
+          root.scaling.set(0.001, 0.001, 0.001); // 1/1000 scale
+          // Optional: raise slightly if model’s origin is below ground
+          root.position.y = 0.0;
+        } catch (e) {
+          console.error("Failed to load /assets/laser_cutter.glb:", e);
+        }
 
-    } catch (e) {
-      console.warn("XR init failed or unavailable:", e);
-    }
-  })();
-  </script>
-</body>
+        // HUD
+        const leftVals = document.getElementById("leftVals");
+        const rightVals = document.getElementById("rightVals");
+        const leftDot = document.getElementById("leftDot");
+        const rightDot = document.getElementById("rightDot");
+        function updateDot(dotEl, x, y) {
+          const half = 48,
+            range = 40;
+          dotEl.style.left = half + x * range + "px";
+          dotEl.style.top = half + y * range + "px";
+        }
+
+        // Render loop
+        engine.runRenderLoop(() => {
+          scene.render();
+        });
+        window.addEventListener("resize", () => engine.resize());
+
+        // XR setup
+        try {
+          const xr = await scene.createDefaultXRExperienceAsync({
+            floorMeshes: [ground],
+          });
+
+          // Rig that we rotate (snap) and translate (smooth) in XR
+          const rig = new BABYLON.TransformNode("rig", scene);
+
+          xr.baseExperience.onStateChangedObservable.add((state) => {
+            if (state === BABYLON.WebXRState.IN_XR) {
+              xr.baseExperience.camera.parent = rig;
+            } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
+              if (xr.baseExperience.camera.parent === rig)
+                xr.baseExperience.camera.parent = null;
+            }
+          });
+
+          const xrInput = xr.input;
+
+          // Snap turn config (LEFT stick)
+          const SNAP_DEGREES = 30;
+          const SNAP_RADIANS = (SNAP_DEGREES * Math.PI) / 180;
+          const SNAP_THRESHOLD = 0.6;
+          const SNAP_DEADZONE = 0.2;
+          let leftReadyToSnap = true;
+
+          // Smooth translate (RIGHT stick) state
+          let moveX = 0,
+            moveY = 0; // axes in [-1,1]
+          const MOVE_DEADZONE = 0.15;
+          const MOVE_SPEED = 2.5; // meters per second
+
+          // Per-frame mover (headset-relative XZ, smooth)
+          scene.onBeforeRenderObservable.add(() => {
+            if (
+              !xr.baseExperience ||
+              xr.baseExperience.state !== BABYLON.WebXRState.IN_XR
+            )
+              return;
+
+            const dt = engine.getDeltaTime() / 1000; // seconds
+            // Apply small deadzone
+            const ax = Math.abs(moveX) > MOVE_DEADZONE ? moveX : 0;
+            const ay = Math.abs(moveY) > MOVE_DEADZONE ? moveY : 0;
+            if (ax === 0 && ay === 0) return;
+
+            const xrCam = xr.baseExperience.camera;
+
+            // Headset-forward (Z) and right (X) in world space
+            const fwd = xrCam.getDirection(BABYLON.Axis.Z).scale(-1); 
+            const right = xrCam.getDirection(BABYLON.Axis.X);
+
+            // Constrain to XZ plane
+            fwd.y = 0;
+            right.y = 0;
+            if (fwd.lengthSquared() < 1e-8 || right.lengthSquared() < 1e-8)
+              return;
+            fwd.normalize();
+            right.normalize();
+
+            // Stick Y moves forward/back, X strafes right/left, both relative to headset yaw
+            const moveWorld = right
+              .scale(ax)
+              .addInPlace(fwd.scale(ay))
+              .scaleInPlace(MOVE_SPEED * dt);
+            rig.position.addInPlace(moveWorld);
+          });
+
+          xrInput.onControllerAddedObservable.add((xrInputSource) => {
+            // Wire inputs when motion controller profile is ready
+            xrInputSource.onMotionControllerInitObservable.add(
+              (motionController) => {
+                const handedness =
+                  (xrInputSource.inputSource &&
+                    xrInputSource.inputSource.handedness) ||
+                  motionController.handedness ||
+                  "unknown";
+
+                // LEFT: snap turn on X axis
+                const leftThumb =
+                  handedness === "left" &&
+                  (motionController.getComponentOfType("thumbstick") ||
+                    motionController.getComponentOfType("touchpad"));
+                if (leftThumb && leftThumb.isAxes()) {
+                  leftThumb.onAxisValueChangedObservable.add((values) => {
+                    const x = values.x || 0,
+                      y = values.y || 0;
+                    leftVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(
+                      2
+                    )}`;
+                    updateDot(leftDot, x, y);
+
+                    if (leftReadyToSnap && x > SNAP_THRESHOLD) {
+                      rig.rotation.y -= SNAP_RADIANS;
+                      leftReadyToSnap = false;
+                    } else if (leftReadyToSnap && x < -SNAP_THRESHOLD) {
+                      rig.rotation.y += SNAP_RADIANS;
+                      leftReadyToSnap = false;
+                    }
+                    if (Math.abs(x) < SNAP_DEADZONE) leftReadyToSnap = true;
+                  });
+                }
+
+                // RIGHT: smooth translate on XZ (world space)
+                const rightThumb =
+                  handedness === "right" &&
+                  (motionController.getComponentOfType("thumbstick") ||
+                    motionController.getComponentOfType("touchpad"));
+                if (rightThumb && rightThumb.isAxes()) {
+                  rightThumb.onAxisValueChangedObservable.add((values) => {
+                    moveX = values.x || 0;
+                    moveY = values.y || 0;
+                    rightVals.textContent = `x=${moveX.toFixed(
+                      2
+                    )}, y=${moveY.toFixed(2)}`;
+                    updateDot(rightDot, moveX, moveY);
+                  });
+                }
+              }
+            );
+          });
+
+          // Cleanup on controller removal
+          xr.input.onControllerRemovedObservable.add(() => {
+            moveX = 0;
+            moveY = 0;
+          });
+        } catch (e) {
+          console.warn("XR init failed or unavailable:", e);
+        }
+      })();
+    </script>
+  </body>
 </html>
