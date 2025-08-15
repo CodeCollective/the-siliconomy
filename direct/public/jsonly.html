@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Viewer</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        canvas { 
+            display: block; 
+            width: 100%; 
+            height: 100%; 
+        }
+        #error {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 12px;
+            background: #300;
+            color: #fff;
+            font: 14px/1.4 system-ui;
+            z-index: 9999;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="webgpu-canvas"></canvas>
+    <div id="error"></div>
+
+    <!-- Main module script -->
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/controls/OrbitControls.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/loaders/GLTFLoader.js';
+        import { RoomEnvironment } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/environments/RoomEnvironment.js';
+        import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/webxr/XRControllerModelFactory.js';
+        import { XRHandModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/webxr/XRHandModelFactory.js';
+        import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/webxr/VRButton.js';
+
+        const {
+            WebGLRenderer,
+            Scene,
+            Color,
+            PerspectiveCamera,
+            HemisphereLight,
+            DirectionalLight,
+            PMREMGenerator,
+            ACESFilmicToneMapping,
+            SRGBColorSpace,
+            Vector3
+        } = THREE;
+
+        // Combined viewer and controls functionality
+
+        // XR Controls Setup (from controls.ts)
+        function setupXRLocomotionControls({ renderer, camera, scene, options = {} }) {
+            const opts = {
+                movementSpeed: 1.5,
+                turnAngle: Math.PI / 6,
+                deadzone: 0.15,
+                snapCooldownMs: 200,
+                addHands: true,
+                addControllerModels: true,
+                addVRButton: true,
+                vrButtonInit: { requiredFeatures: ['local-floor'] },
+                verbose: true,
+                ...options
+            };
+
+            renderer.xr.enabled = true;
+
+            if (opts.addVRButton) {
+                const btn = VRButton.createButton(renderer, opts.vrButtonInit);
+                if (!document.body.contains(btn)) document.body.appendChild(btn);
+            }
+
+            const controllerModelFactory = new XRControllerModelFactory();
+            const handModelFactory = new XRHandModelFactory();
+
+            const slots = {};
+
+            const c0 = renderer.xr.getController(0);
+            const c1 = renderer.xr.getController(1);
+            const g0 = renderer.xr.getControllerGrip(0);
+            const g1 = renderer.xr.getControllerGrip(1);
+
+            if (opts.addControllerModels) {
+                g0.add(controllerModelFactory.createControllerModel(g0));
+                g1.add(controllerModelFactory.createControllerModel(g1));
+            }
+
+            scene.add(c0, c1, g0, g1);
+
+            const onConnected = (ev) => {
+                const src = ev.data;
+                const handed = src.handedness || 'none';
+
+                if (opts.verbose) console.log('[XR] connected', handed, src.profiles, !!src.gamepad);
+
+                const slot = {
+                    controller: (handed === 'left' ? c0 : c1),
+                    grip: (handed === 'left' ? g0 : g1),
+                };
+
+                if (opts.addHands && typeof renderer.xr.getHand === 'function') {
+                    const h = renderer.xr.getHand(handed === 'left' ? 0 : 1);
+                    const handModel = handModelFactory.createHandModel(h, 'mesh');
+                    h.add(handModel);
+                    scene.add(h);
+                    slot.hand = h;
+                }
+                slots[handed] = slot;
+            };
+
+            const onDisconnected = (ev) => {
+                const src = ev.data;
+                const handed = src.handedness || 'none';
+                if (opts.verbose) console.log('[XR] disconnected', handed);
+                delete slots[handed];
+            };
+
+            c0.addEventListener('connected', onConnected);
+            c1.addEventListener('connected', onConnected);
+            c0.addEventListener('disconnected', onDisconnected);
+            c1.addEventListener('disconnected', onDisconnected);
+
+            let enabled = true;
+            let snapBlocked = false;
+
+            function getPads() {
+                const left = slots['left']?.controller?.inputSource?.gamepad;
+                const right = slots['right']?.controller?.inputSource?.gamepad;
+                return { left, right };
+            }
+
+            function moveRigXZ(rig, head, dx, dy, dt) {
+                const forward = new Vector3(0, 0, -1).applyQuaternion(head.quaternion);
+                forward.y = 0; forward.normalize();
+
+                const right = new Vector3(1, 0, 0).applyQuaternion(head.quaternion);
+                right.y = 0; right.normalize();
+
+                const speed = opts.movementSpeed * dt;
+                rig.position.addScaledVector(forward, dy * speed);
+                rig.position.addScaledVector(right, dx * speed);
+            }
+
+            function snapTurn(rig, axis) {
+                if (snapBlocked) return;
+                if (Math.abs(axis) < 0.9) return;
+                rig.rotation.y += axis > 0 ? opts.turnAngle : -opts.turnAngle;
+                snapBlocked = true;
+                setTimeout(() => { snapBlocked = false; }, opts.snapCooldownMs);
+            }
+
+            function tick(dt) {
+                if (!enabled) return;
+                if (!renderer.xr.isPresenting) return;
+
+                const rig = getRig(renderer);
+                if (!rig) return;
+
+                const head = renderer.xr.getCamera(camera);
+                const { left, right } = getPads();
+
+                if (left && left.axes && left.axes.length >= 2) {
+                    const ax = left.axes[0];
+                    const ay = left.axes[1];
+                    const dz = opts.deadzone;
+                    const dx = Math.abs(ax) > dz ? ax : 0;
+                    const dy = Math.abs(ay) > dz ? ay : 0;
+                    if (dx || dy) moveRigXZ(rig, head, dx, dy, dt);
+                }
+
+                if (right && right.axes && right.axes.length >= 1) {
+                    const turnAxis = right.axes[0];
+                    snapTurn(rig, turnAxis);
+                }
+            }
+
+            function getRig(renderer, fallback = null) {
+                const xrCam = renderer.xr.getCamera();
+                return (xrCam && xrCam.parent) ? xrCam.parent : fallback;
+            }
+
+            function setEnabled(v) { enabled = v; }
+
+            function dispose() {
+                c0.removeEventListener('connected', onConnected);
+                c1.removeEventListener('connected', onConnected);
+                c0.removeEventListener('disconnected', onDisconnected);
+                c1.removeEventListener('disconnected', onDisconnected);
+
+                if (slots['left']?.hand) scene.remove(slots['left'].hand);
+                if (slots['right']?.hand) scene.remove(slots['right'].hand);
+            }
+
+            return {
+                tick,
+                setEnabled,
+                dispose,
+                getRig: () => getRig(renderer),
+                getGamepads: getPads,
+            };
+        }
+
+        // Main Viewer Setup (from viewer.ts)
+        function initViewer() {
+            const canvas = document.getElementById('webgpu-canvas');
+            if (!canvas) throw new Error('Canvas element #webgpu-canvas not found.');
+
+            const renderer = new WebGLRenderer({
+                canvas,
+                antialias: false,
+                powerPreference: 'high-performance'
+            });
+
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputColorSpace = SRGBColorSpace;
+            renderer.toneMapping = ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.25;
+
+            const scene = new Scene();
+            scene.background = new Color(0xf2f2f2);
+
+            const pmrem = new PMREMGenerator(renderer);
+            const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+            scene.environment = envTex;
+
+            const camera = new PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(0, 1.6, -5);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            renderer.xr.enabled = true;
+
+            const controlsXR = setupXRLocomotionControls({
+                renderer,
+                camera,
+                scene,
+                options: {
+                    movementSpeed: 1.5,
+                    turnAngle: Math.PI / 6,
+                    deadzone: 0.15,
+                    snapCooldownMs: 200,
+                    addHands: true,
+                    addControllerModels: true,
+                    addVRButton: true,
+                    verbose: true,
+                },
+            });
+
+            scene.add(new HemisphereLight(0xffffff, 0x444466, 1.1));
+            const dir = new DirectionalLight(0xffffff, 2.2);
+            dir.position.set(0, 3, 0);
+            scene.add(dir);
+            scene.add(new HemisphereLight(0xffffff, 0x333333, 1.0));
+
+            const loader = new GLTFLoader();
+            loader.load(
+                'laser_cutter.glb',
+                (gltf) => {
+                    const root = gltf.scene;
+                    root.scale.setScalar(0.001);
+                    scene.add(root);
+                    controls.target.set(0, 0, 0);
+                    controls.update();
+                },
+                undefined,
+                (error) => {
+                    console.error('Error loading GLTF:', error);
+                    document.getElementById('error').textContent = `Error loading model: ${error.message}`;
+                    document.getElementById('error').style.display = 'block';
+                }
+            );
+
+            window.addEventListener('resize', () => {
+                if (renderer.xr.isPresenting) return;
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            });
+
+            renderer.xr.addEventListener('sessionstart', () => {
+                // WebXR manages size during session
+            });
+
+            renderer.xr.addEventListener('sessionend', () => {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            });
+
+            let last = performance.now();
+            function animate(t = performance.now()) {
+                const dt = (t - last) / 1000;
+                last = t;
+
+                if (!renderer.xr.isPresenting) {
+                    controls.update();
+                }
+
+                if (renderer.xr.isPresenting) {
+                    controlsXR.tick(dt);
+                }
+
+                renderer.render(scene, camera);
+            }
+
+            renderer.setAnimationLoop(animate);
+        }
+
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                initViewer();
+            } catch (err) {
+                console.error('Failed to initialize viewer:', err);
+                const el = document.getElementById('error');
+                el.textContent = err instanceof Error ? err.message : String(err);
+                el.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

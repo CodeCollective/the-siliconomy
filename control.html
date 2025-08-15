@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Babylon.js WebXR — Controllers Demo (Snap Turn + Robust Loading)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="WebXR scene showing controller input with left-stick snap turn, clear thumbstick visuals, robust loading, and defensive vector usage." />
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111; color: #eaeaea; }
+    #renderCanvas { width: 100%; height: 100%; touch-action: none; display: block; }
+    .hud, .footer, .status {
+      position: fixed; padding: 8px 10px; background: rgba(0,0,0,.55);
+      border: 1px solid rgba(255,255,255,.15); border-radius: 10px;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.3; backdrop-filter: blur(6px);
+    }
+    .hud { left: 12px; top: 12px; font-size: 13px; }
+    .footer { right: 12px; bottom: 12px; font-size: 12px; }
+    .status { right: 12px; top: 12px; font-size: 12px; max-width: 36ch; display:none; white-space: pre-line; }
+    .pad {
+      display: grid; grid-template-columns: auto auto; gap: 6px 12px; margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+    .meter {
+      width: 96px; height: 96px; border-radius: 8px; background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.15); position: relative; overflow: hidden;
+    }
+    .dot {
+      position: absolute; width: 10px; height: 10px; border-radius: 50%;
+      background: #9ad1ff; transform: translate(-50%, -50%);
+      left: 50%; top: 50%;
+    }
+    code { background: rgba(255,255,255,.1); padding: 0 4px; border-radius: 4px; }
+    a { color: #9ad1ff; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div class="hud">
+    <div><strong>Babylon.js WebXR — Controllers Demo</strong></div>
+    <div>Enter VR, then:</div>
+    <ul style="margin:6px 0 8px 18px;">
+      <li><strong>Left stick</strong>: <em>Snap turn</em> (±30°)</li>
+      <li><strong>Right stick</strong>: Move the glowing sphere</li>
+      <li><strong>Trigger</strong>: Scale right box &nbsp;&nbsp; <strong>Squeeze</strong>: Scale left box</li>
+    </ul>
+    <div class="pad">
+      <div><strong>Left stick</strong></div><div id="leftVals">x=0.00, y=0.00</div>
+      <div class="meter"><div id="leftDot" class="dot"></div></div>
+      <div><strong>Right stick</strong></div><div id="rightVals">x=0.00, y=0.00</div>
+      <div class="meter"><div id="rightDot" class="dot"></div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Tip: WebXR requires HTTPS and a compatible headset (Quest works). On desktop, use a WebXR emulator; non-XR orbit camera also works.
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <!-- Babylon.js -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+  <script>
+  (async function () {
+    const statusEl = document.getElementById('status');
+    function showStatus(msg) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = msg;
+      console.warn(msg);
+    }
+
+    const canvas = document.getElementById("renderCanvas");
+
+    // Engine (try WebGL2, fallback to WebGL1)
+    let engine;
+    try {
+      engine = new BABYLON.Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: false });
+    } catch (e) {
+      try {
+        engine = new BABYLON.Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: true });
+        showStatus("WebGL2 failed, using WebGL1 fallback.\n" + String(e));
+      } catch (e2) {
+        showStatus("Failed to create WebGL context.\n" + String(e2));
+        return;
+      }
+    }
+
+    // HUD elements
+    const leftVals = document.getElementById('leftVals');
+    const rightVals = document.getElementById('rightVals');
+    const leftDot = document.getElementById('leftDot');
+    const rightDot = document.getElementById('rightDot');
+
+    function updateDot(dotEl, x, y) {
+      const half = 48, range = 40; // meter is 96x96
+      dotEl.style.left = (half + x * range) + 'px';
+      dotEl.style.top  = (half + y * range) + 'px';
+    }
+
+    // Helpers to align a mesh to a direction WITHOUT reassigning vectors
+    function alignMeshToDirection(mesh, dir) {
+      try {
+        if (!mesh || !dir) return;
+        if (!mesh.rotationQuaternion) mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
+        
+        // Always work with a cloned direction to avoid reference issues
+        const d = dir.clone();
+        if (d.lengthSquared() < 1e-8) {
+          console.warn("Direction vector too small, using default");
+          d.copyFromFloats(0, 0, -1);
+        }
+        d.normalize();
+        
+        const up = BABYLON.Axis.Y.clone(); // Clone axis to be safe
+        const q = BABYLON.Quaternion.FromLookDirectionRH(d, up);
+        if (q && mesh.rotationQuaternion) {
+          mesh.rotationQuaternion.copyFrom(q);
+        }
+      } catch (error) {
+        console.error("Error in alignMeshToDirection:", error);
+      }
+    }
+
+    const scene = new BABYLON.Scene(engine);
+    scene.clearColor = new BABYLON.Color4(0.02, 0.02, 0.025, 1.0);
+
+    // Non-XR camera (always present)
+    const camera = new BABYLON.ArcRotateCamera("camera",
+      Math.PI / 2.2, Math.PI / 2.6, 10, new BABYLON.Vector3(0, 1.3, 0), scene);
+    camera.attachControl(canvas, true);
+    camera.lowerBetaLimit = 0.1;
+    camera.upperBetaLimit = Math.PI / 2.0;
+    camera.wheelDeltaPercentage = 0.01;
+
+    // Reduce touch spam logs
+    const pointerInput = camera.inputs.attached.pointers;
+    if (pointerInput) {
+      pointerInput.multiTouchPanAndZoom = true; // keep two-finger zoom
+      pointerInput.multiTouchPanning = false;   // avoid 3+ finger panning logs
+    }
+
+    // Lights
+    const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+    hemi.intensity = 0.8;
+    const dir = new BABYLON.DirectionalLight("dir", new BABYLON.Vector3(-0.25, -1, 0.2), scene);
+    dir.intensity = 0.6;
+    dir.position = new BABYLON.Vector3(5, 10, -5);
+
+    // Ground & environment
+    const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 20, height: 20 }, scene);
+    const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+    groundMat.diffuseColor = new BABYLON.Color3(0.2, 0.22, 0.24);
+    groundMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+    ground.material = groundMat;
+    scene.createDefaultEnvironment({ createSkybox: true, skyboxSize: 100, enableGroundShadow: true, groundYBias: 0.001 });
+
+    // Targets
+    const boxRight = BABYLON.MeshBuilder.CreateBox("Box_Right_Trigger", { size: 0.6 }, scene);
+    boxRight.position.copyFromFloats(1.3, 1.2, 0);
+
+    const boxLeft = BABYLON.MeshBuilder.CreateBox("Box_Left_Squeeze", { size: 0.6 }, scene);
+    boxLeft.position.copyFromFloats(-1.3, 1.2, 0);
+
+    const moverSphere = BABYLON.MeshBuilder.CreateSphere("Mover", { diameter: 0.45, segments: 16 }, scene);
+    moverSphere.position.copyFromFloats(0, 1.2, 0);
+    const emissiveMat = new BABYLON.StandardMaterial("em", scene);
+    emissiveMat.emissiveColor = new BABYLON.Color3(0.1, 0.5, 1.0);
+    moverSphere.material = emissiveMat;
+
+    // Quick spinner
+    const spinner = BABYLON.MeshBuilder.CreateTorus("spinner", { diameter: 0.6, thickness: 0.06 }, scene);
+    spinner.position.copyFromFloats(0, 2.0, 0);
+    scene.onBeforeRenderObservable.add(() => {
+      spinner.rotation.y += engine.getDeltaTime() * 0.0015;
+    });
+
+    // Ensure the default loading UI hides after first render
+    let firstFrame = false;
+    scene.onAfterRenderObservable.addOnce(() => {
+      try { engine.hideLoadingUI(); } catch {}
+      firstFrame = true;
+    });
+
+    // Start render loop
+    engine.runRenderLoop(() => {
+      scene.render();
+    });
+
+    // XR setup
+    try {
+      const xr = await scene.createDefaultXRExperienceAsync({ floorMeshes: [ground] });
+
+      // Parent XR camera to a rig we can rotate for snap turn
+      const rig = new BABYLON.TransformNode("rig", scene);
+
+      xr.baseExperience.onStateChangedObservable.add((state) => {
+        if (state === BABYLON.WebXRState.IN_XR) {
+          xr.baseExperience.camera.parent = rig;
+        } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
+          if (xr.baseExperience.camera.parent === rig) xr.baseExperience.camera.parent = null;
+          rig.rotation.set(0, 0, 0);
+        }
+      });
+
+      // Controller visuals and input handling
+      const xrInput = xr.input;
+
+      // Store data per controller, including the per-frame observer so we can remove it
+      const controllerData = new Map(); // key: xrInputSource -> { rayMesh, grip, perFrameObserver }
+
+      function updatePointerRayMesh(xrInputSource, rayMesh) {
+        try {
+          // Create a fresh ray each time to avoid reusing potentially corrupted references
+          const ray = new BABYLON.Ray(new BABYLON.Vector3(), new BABYLON.Vector3());
+          
+          // Debug: Check if XR input source is valid
+          if (!xrInputSource || !xrInputSource.inputSource) {
+            console.warn("Invalid XR input source in updatePointerRayMesh");
+            return false;
+          }
+
+          const ok = xrInputSource.getWorldPointerRayToRef(ray);
+          if (!ok) {
+            console.warn("Failed to get world pointer ray");
+            return false;
+          }
+
+          // Validate ray data before using
+          if (!ray.origin || !ray.direction || 
+              typeof ray.origin.x === 'undefined' || 
+              typeof ray.direction.x === 'undefined') {
+            console.warn("Invalid ray data:", ray);
+            return false;
+          }
+
+          // Clone vectors to avoid any reference issues
+          const origin = ray.origin.clone();
+          const direction = ray.direction.clone();
+          
+          // Validate direction vector
+          if (direction.lengthSquared() < 1e-8) {
+            console.warn("Ray direction too small, using default");
+            direction.copyFromFloats(0, 0, -1);
+          } else {
+            direction.normalize();
+          }
+
+          // Safe position update using copyFromFloats
+          const offset = direction.scale(0.5);
+          rayMesh.position.copyFromFloats(
+            origin.x + offset.x,
+            origin.y + offset.y,
+            origin.z + offset.z
+          );
+
+          if (!rayMesh.rotationQuaternion) {
+            rayMesh.rotationQuaternion = BABYLON.Quaternion.Identity();
+          }
+          alignMeshToDirection(rayMesh, direction);
+
+          // keep uniform length visually
+          rayMesh.scaling.y = 1.0;
+          return true;
+        } catch (error) {
+          console.error("Error in updatePointerRayMesh:", error);
+          return false;
+        }
+      }
+
+      // Snap turn config (LEFT stick)
+      const SNAP_DEGREES = 30;
+      const SNAP_RADIANS = SNAP_DEGREES * Math.PI / 180;
+      const SNAP_THRESHOLD = 0.6; // engage
+      const SNAP_DEADZONE = 0.2;  // reset/hysteresis
+      let leftReadyToSnap = true; // gate so each push snaps once
+
+      xrInput.onControllerAddedObservable.add((xrInputSource) => {
+        // Visualize pointer
+        const rayMesh = BABYLON.MeshBuilder.CreateCylinder("ray_" + xrInputSource.uniqueId, { height: 1, diameter: 0.01 }, scene);
+        const rayMat = new BABYLON.StandardMaterial("rayMat_" + xrInputSource.uniqueId, scene);
+        rayMat.emissiveColor = new BABYLON.Color3(0.8, 0.9, 1.0);
+        rayMat.disableLighting = true;
+        rayMesh.material = rayMat;
+        rayMesh.isPickable = false;
+        rayMesh.rotationQuaternion = BABYLON.Quaternion.Identity();
+
+        // Visualize grip
+        const grip = BABYLON.MeshBuilder.CreateBox("grip_" + xrInputSource.uniqueId, { size: 0.06 }, scene);
+        const gripMat = new BABYLON.StandardMaterial("gripMat_" + xrInputSource.uniqueId, scene);
+        gripMat.emissiveColor = new BABYLON.Color3(1.0, 0.7, 0.2);
+        gripMat.disableLighting = true;
+        grip.material = gripMat;
+        grip.isPickable = false;
+        grip.rotationQuaternion = BABYLON.Quaternion.Identity();
+
+        // Keep ray & grip updated each frame (no lookAt, no vector replacement)
+        const perFrameObserver = scene.onBeforeRenderObservable.add(() => {
+          try {
+            if (!rayMesh.isDisposed()) {
+              updatePointerRayMesh(xrInputSource, rayMesh);
+            }
+
+            // Safer grip ray handling
+            if (!grip.isDisposed()) {
+              const gripRay = new BABYLON.Ray(new BABYLON.Vector3(), new BABYLON.Vector3());
+              const gOk = xrInputSource.getWorldPointerRayToRef(gripRay, true /* gripIfAvailable */);
+              if (gOk && gripRay.origin && gripRay.direction) {
+                // Use copyFromFloats to avoid reference issues
+                grip.position.copyFromFloats(gripRay.origin.x, gripRay.origin.y, gripRay.origin.z);
+                if (gripRay.direction.lengthSquared() > 1e-8) {
+                  alignMeshToDirection(grip, gripRay.direction.clone());
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Error in per-frame observer:", error);
+            // Remove this observer if it keeps failing
+            scene.onBeforeRenderObservable.remove(perFrameObserver);
+          }
+        });
+
+        controllerData.set(xrInputSource, { rayMesh, grip, perFrameObserver });
+
+        // When motion controller profile is ready, wire components
+        xrInputSource.onMotionControllerInitObservable.add((motionController) => {
+          const handedness = (xrInputSource.inputSource && xrInputSource.inputSource.handedness) || motionController.handedness || "unknown";
+
+          // Trigger -> scale right box
+          const trigger = motionController.getComponent("xr-standard-trigger") || motionController.getMainComponent();
+          if (trigger) {
+            trigger.onButtonStateChangedObservable.add(() => {
+              const box = scene.getMeshByName("Box_Right_Trigger");
+              if (box) {
+                // Fixed: Use copyFromFloats instead of copyFrom with static Vector3 references
+                if (trigger.pressed) {
+                  box.scaling.copyFromFloats(1.2, 1.2, 1.2);
+                } else {
+                  box.scaling.copyFromFloats(1.0, 1.0, 1.0);
+                }
+              }
+            });
+          }
+
+          // Squeeze -> scale left box
+          const squeeze = motionController.getComponentOfType("squeeze");
+          if (squeeze) {
+            squeeze.onButtonStateChangedObservable.add(() => {
+              const boxL = scene.getMeshByName("Box_Left_Squeeze");
+              if (boxL) {
+                // Fixed: Use copyFromFloats instead of copyFrom with static Vector3 references
+                if (squeeze.pressed) {
+                  boxL.scaling.copyFromFloats(1.2, 1.2, 1.2);
+                } else {
+                  boxL.scaling.copyFromFloats(1.0, 1.0, 1.0);
+                }
+              }
+            });
+          }
+
+          // Thumbstick / touchpad axes
+          const thumb = motionController.getComponentOfType("thumbstick") || motionController.getComponentOfType("touchpad");
+          if (thumb && thumb.isAxes()) {
+            thumb.onAxisValueChangedObservable.add((values) => {
+              const x = values.x || 0;
+              const y = values.y || 0;
+
+              if (handedness === "left") {
+                // HUD + visual meter for LEFT stick
+                leftVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(2)}`;
+                updateDot(leftDot, x, y);
+
+                // SNAP TURN on LEFT stick X (mutate rotation)
+                if (leftReadyToSnap && x > SNAP_THRESHOLD) {
+                  rig.rotation.y -= SNAP_RADIANS;
+                  leftReadyToSnap = false;
+                } else if (leftReadyToSnap && x < -SNAP_THRESHOLD) {
+                  rig.rotation.y += SNAP_RADIANS;
+                  leftReadyToSnap = false;
+                }
+                if (Math.abs(x) < SNAP_DEADZONE) {
+                  leftReadyToSnap = true;
+                }
+              } else if (handedness === "right") {
+                // HUD + visual meter for RIGHT stick
+                rightVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(2)}`;
+                updateDot(rightDot, x, y);
+
+                // Move sphere; make movement obvious via size/color
+                const mover = scene.getMeshByName("Mover");
+                if (mover) {
+                  try {
+                    const speed = 0.02;
+                    // Safe position updates using individual component access
+                    mover.position.x += x * speed;
+                    mover.position.z += y * speed;
+
+                    const intensity = Math.min(1, Math.abs(x) + Math.abs(y));
+                    const s = 1 + intensity;
+                    mover.scaling.copyFromFloats(s, s, s);
+                    
+                    const mat = mover.material;
+                    if (mat && mat.emissiveColor instanceof BABYLON.Color3) {
+                      // Create new color instead of modifying existing
+                      mat.emissiveColor = new BABYLON.Color3(intensity, 0.5 * (1 - intensity), 1 - intensity);
+                    }
+                  } catch (error) {
+                    console.error("Error updating mover sphere:", error);
+                  }
+                }
+              }
+            });
+          }
+        });
+      });
+
+      // Proper cleanup on controller removal
+      xr.input.onControllerRemovedObservable.add((xrInputSource) => {
+        const data = controllerData.get(xrInputSource);
+        if (data) {
+          if (data.perFrameObserver) scene.onBeforeRenderObservable.remove(data.perFrameObserver);
+          if (data.rayMesh && !data.rayMesh.isDisposed()) data.rayMesh.dispose();
+          if (data.grip && !data.grip.isDisposed()) data.grip.dispose();
+          controllerData.delete(xrInputSource);
+        }
+      });
+    } catch (e) {
+      showStatus("XR init failed (this is okay on desktop or without HTTPS):\n" + String(e));
+      // continue rendering in non-XR
+    }
+
+    // If nothing rendered after 2 seconds, force-hide loading UI and report
+    setTimeout(() => {
+      if (!firstFrame) {
+        try { engine.hideLoadingUI(); } catch {}
+        showStatus("Scene rendered slowly to first frame. If still blank:\n• Use HTTPS\n• Update browser/GPU drivers\n• Try WebGL1 fallback\n• Check console for errors");
+      }
+    }, 2000);
+
+    window.addEventListener("resize", () => engine.resize());
+  })();
+  </script>
+</body>
+</html>
