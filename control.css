@@ -1,0 +1,72 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #111;
+    color: #eaeaea;
+}
+
+#renderCanvas {
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    display: block;
+}
+
+.hud,
+.footer {
+    position: fixed;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+        Helvetica, Arial, sans-serif;
+    line-height: 1.3;
+    backdrop-filter: blur(6px);
+}
+
+.hud {
+    left: 12px;
+    top: 12px;
+    font-size: 13px;
+}
+
+.footer {
+    right: 12px;
+    bottom: 12px;
+    font-size: 12px;
+}
+
+.pad {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 12px;
+    margin-top: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+        "Liberation Mono", monospace;
+    font-size: 12px;
+}
+
+.meter {
+    width: 96px;
+    height: 96px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+}
+
+.dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #9ad1ff;
+    transform: translate(-50%, -50%);
+    left: 50%;
+    top: 50%;
+}
