@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -159,8 +158,12 @@
           if (xr.baseExperience && xr.baseExperience.featuresManager) {
             const fm = xr.baseExperience.featuresManager;
             if (BABYLON.WebXRFeatureName) {
-              try { fm.disableFeature(BABYLON.WebXRFeatureName.TELEPORTATION); } catch (e) {}
-              try { fm.disableFeature(BABYLON.WebXRFeatureName.MOVEMENT); } catch (e) {}
+              try {
+                fm.disableFeature(BABYLON.WebXRFeatureName.TELEPORTATION);
+              } catch (e) {}
+              try {
+                fm.disableFeature(BABYLON.WebXRFeatureName.MOVEMENT);
+              } catch (e) {}
             }
           }
 
@@ -187,13 +190,17 @@
 
           // Smooth translate (RIGHT stick) state
           let moveX = 0,
-              moveY = 0; // axes in [-1,1]
+            moveY = 0; // axes in [-1,1]
           const MOVE_DEADZONE = 0.15;
           const MOVE_SPEED = 2.5; // meters per second
 
           // Per-frame mover (headset-relative XZ, smooth)
           scene.onBeforeRenderObservable.add(() => {
-            if (!xr.baseExperience || xr.baseExperience.state !== BABYLON.WebXRState.IN_XR) return;
+            if (
+              !xr.baseExperience ||
+              xr.baseExperience.state !== BABYLON.WebXRState.IN_XR
+            )
+              return;
 
             const dt = engine.getDeltaTime() / 1000; // seconds
             // Apply small deadzone
@@ -210,12 +217,16 @@
             // Constrain to XZ plane
             fwd.y = 0;
             right.y = 0;
-            if (fwd.lengthSquared() < 1e-8 || right.lengthSquared() < 1e-8) return;
+            if (fwd.lengthSquared() < 1e-8 || right.lengthSquared() < 1e-8)
+              return;
             fwd.normalize();
             right.normalize();
 
             // Stick Y moves forward/back, X strafes right/left, both relative to headset yaw
-            const moveWorld = right.scale(ax).addInPlace(fwd.scale(ay)).scaleInPlace(MOVE_SPEED * dt);
+            const moveWorld = right
+              .scale(ax)
+              .addInPlace(fwd.scale(ay))
+              .scaleInPlace(MOVE_SPEED * dt);
             rig.position.addInPlace(moveWorld);
           });
 
@@ -224,52 +235,68 @@
           let rightAxisObserver = null;
 
           xrInput.onControllerAddedObservable.add((xrInputSource) => {
-            xrInputSource.onMotionControllerInitObservable.add((motionController) => {
-              const handedness =
-                (xrInputSource.inputSource && xrInputSource.inputSource.handedness) ||
-                motionController.handedness ||
-                "unknown";
+            xrInputSource.onMotionControllerInitObservable.add(
+              (motionController) => {
+                const handedness =
+                  (xrInputSource.inputSource &&
+                    xrInputSource.inputSource.handedness) ||
+                  motionController.handedness ||
+                  "unknown";
 
-              const comp =
-                motionController.getComponentOfType("thumbstick") ||
-                motionController.getComponentOfType("touchpad");
-              if (!comp) return;
+                const comp =
+                  motionController.getComponentOfType("thumbstick") ||
+                  motionController.getComponentOfType("touchpad");
+                if (!comp) return;
 
-              if (handedness === "right") {
-                if (rightAxisObserver) comp.onAxisValueChangedObservable.remove(rightAxisObserver);
-                rightAxisObserver = comp.onAxisValueChangedObservable.add((values) => {
-                  moveX = values.x || 0;
-                  moveY = values.y || 0;
-                  rightVals.textContent = `x=${moveX.toFixed(2)}, y=${moveY.toFixed(2)}`;
-                  updateDot(rightDot, moveX, moveY);
-                });
-              } else if (handedness === "left") {
-                if (leftAxisObserver) comp.onAxisValueChangedObservable.remove(leftAxisObserver);
-                leftAxisObserver = comp.onAxisValueChangedObservable.add((values) => {
-                  const x = values.x || 0;
-                  const y = values.y || 0;
+                if (handedness === "left") {
+                  // LEFT HAND = smooth move
+                  if (leftAxisObserver)
+                    comp.onAxisValueChangedObservable.remove(leftAxisObserver);
+                  leftAxisObserver = comp.onAxisValueChangedObservable.add(
+                    (values) => {
+                      moveX = values.x || 0;
+                      moveY = values.y || 0;
+                      leftVals.textContent = `x=${moveX.toFixed(
+                        2
+                      )}, y=${moveY.toFixed(2)}`;
+                      updateDot(leftDot, moveX, moveY);
+                    }
+                  );
+                } else if (handedness === "right") {
+                  // RIGHT HAND = snap turn
+                  if (rightAxisObserver)
+                    comp.onAxisValueChangedObservable.remove(rightAxisObserver);
+                  rightAxisObserver = comp.onAxisValueChangedObservable.add(
+                    (values) => {
+                      const x = values.x || 0;
+                      const y = values.y || 0;
 
-                  leftVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(2)}`;
-                  updateDot(leftDot, x, y);
+                      rightVals.textContent = `x=${x.toFixed(2)}, y=${y.toFixed(
+                        2
+                      )}`;
+                      updateDot(rightDot, x, y);
 
-                  // Camera as pivot
-                  const cam = xr.baseExperience.camera;
-                  const pivot = cam.globalPosition ?? cam.getAbsolutePosition();
+                      // Camera as pivot
+                      const cam = xr.baseExperience.camera;
+                      const pivot =
+                        cam.globalPosition ?? cam.getAbsolutePosition();
 
-                  if (leftReadyToSnap && x > SNAP_THRESHOLD) {
-                    rig.rotateAround(pivot, BABYLON.Axis.Y, -SNAP_RADIANS);
-                    leftReadyToSnap = false;
-                  } else if (leftReadyToSnap && x < -SNAP_THRESHOLD) {
-                    rig.rotateAround(pivot, BABYLON.Axis.Y, SNAP_RADIANS);
-                    leftReadyToSnap = false;
-                  }
+                      if (leftReadyToSnap && x > SNAP_THRESHOLD) {
+                        rig.rotateAround(pivot, BABYLON.Axis.Y, -SNAP_RADIANS);
+                        leftReadyToSnap = false;
+                      } else if (leftReadyToSnap && x < -SNAP_THRESHOLD) {
+                        rig.rotateAround(pivot, BABYLON.Axis.Y, SNAP_RADIANS);
+                        leftReadyToSnap = false;
+                      }
 
-                  if (Math.abs(x) < SNAP_DEADZONE) {
-                    leftReadyToSnap = true;
-                  }
-                });
+                      if (Math.abs(x) < SNAP_DEADZONE) {
+                        leftReadyToSnap = true;
+                      }
+                    }
+                  );
+                }
               }
-            });
+            );
           });
 
           // Cleanup on controller removal
