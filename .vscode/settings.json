@@ -4,6 +4,10 @@
       {
         "match": ".*lasercutter\\.py$",
         "cmd": "docker run -v ${fileDirname}:/app -w /app --rm lasercutter:latest python3 lasercutter.py"
+      },
+      {
+        "match": ".*dirtbike\\.py$",
+        "cmd": "docker run -v ${fileDirname}:/app -w /app --rm lasercutter:latest python3 dirtbike.py"
       }
     ]
   }

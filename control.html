@@ -36,6 +36,10 @@
     <script>
       (async function () {
         const canvas = document.getElementById("renderCanvas");
+        
+        // Get filename from URL search parameter, default to "laser_cutter.glb"
+        const urlParams = new URLSearchParams(window.location.search);
+        const filename = urlParams.get('model') || 'laser_cutter.glb';
 
         // Engine (WebGL2, fall back to WebGL1)
         let engine;
@@ -112,17 +116,17 @@
           const result = await BABYLON.SceneLoader.ImportMeshAsync(
             "",
             "/assets/",
-            "laser_cutter.glb",
+            filename,
             scene
           );
           result.meshes.forEach((m) => {
             if (m.parent == null) m.parent = root;
           });
           root.scaling.set(0.001, 0.001, 0.001); // 1/1000 scale
-          // Optional: raise slightly if model’s origin is below ground
+          // Optional: raise slightly if model's origin is below ground
           root.position.y = 0.0;
         } catch (e) {
-          console.error("Failed to load /assets/laser_cutter.glb:", e);
+          console.error(`Failed to load /assets/${filename}:`, e);
         }
 
         // HUD
